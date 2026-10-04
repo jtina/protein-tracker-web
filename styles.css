@@ -84,6 +84,8 @@ svg.icon { display: block; flex-shrink: 0; }
 .header-title { font-size: 30px; font-weight: 700; line-height: 1.2; letter-spacing: 0.2px; }
 .header-date { font-size: 15px; font-weight: 500; color: var(--secondary); }
 
+.header-buttons { display: flex; gap: 10px; }
+
 .palette-button {
   width: 44px;
   height: 44px;
@@ -446,6 +448,8 @@ svg.icon { display: block; flex-shrink: 0; }
 }
 .accent-name { font-size: 12px; font-weight: 600; }
 
+.backup-note { font-size: 15px; color: var(--secondary); margin-top: 8px; line-height: 1.35; }
+
 /* Alert */
 .alert-root { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; background: rgba(0, 0, 0, 0.45); animation: fade-in 0.2s ease; }
 .alert {
@@ -460,4 +464,9 @@ svg.icon { display: block; flex-shrink: 0; }
 .alert-body { padding: 19px 16px; }
 .alert-title { font-size: 17px; font-weight: 600; margin-bottom: 2px; }
 .alert-message { font-size: 13px; }
-.alert-button { width: 100%; padding: 11px 0; color: var(--system-blue); font-weight: 600; border-top: 0.5px solid var(--separator); }
+.alert-buttons { display: flex; flex-direction: column; }
+.alert-buttons.pair { flex-direction: row-reverse; }
+.alert-buttons.pair .alert-button + .alert-button { border-right: 0.5px solid var(--separator); }
+.alert-button { flex: 1; width: 100%; padding: 11px 0; color: var(--system-blue); border-top: 0.5px solid var(--separator); }
+.alert-button.cancel { font-weight: 600; }
+.alert-button.destructive { color: var(--system-red); }

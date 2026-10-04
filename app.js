@@ -188,6 +188,7 @@
       case 'calendar': return stroke('<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17"/><path d="M8 3v3.5M16 3v3.5"/>', 2);
       case 'grid1x2': return stroke('<rect x="4" y="3.5" width="16" height="7.5" rx="2"/><rect x="4" y="13" width="16" height="7.5" rx="2"/>', 2);
       case 'fork': return stroke('<path d="M7 3v6.5a2.5 2.5 0 0 0 5 0V3"/><path d="M9.5 3v18"/><path d="M17.5 21V3c-2 1.5-3 4-3 7.5 0 1.5.8 2.5 3 2.5"/>', 2);
+      case 'backup': return stroke('<path d="M8 3.5v12M4.5 7 8 3.5 11.5 7"/><path d="M16 20.5v-12M12.5 17l3.5 3.5 3.5-3.5"/>', 2.2);
       case 'palette': return `<svg class="icon" width="${s}" height="${s}" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M12 2.5C6.5 2.5 2.5 6.6 2.5 11.7c0 5.2 4.2 9.8 9.3 9.8 1.6 0 2.4-.9 2.4-2 0-.6-.2-1-.5-1.4-.3-.4-.5-.8-.5-1.3 0-1 .8-1.7 1.8-1.7h2.2c2.8 0 4.8-2 4.8-4.8C22 6.6 17.6 2.5 12 2.5zM6.8 13.2a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4zm2.6-4.6a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4zm5.2 0a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4zm3.2 3.9a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4z"/></svg>`;
     }
     return '';
@@ -244,12 +245,20 @@
         el('div', { class: 'header-title', text: 'Protein Tracker' }),
         el('div', { class: 'header-date', text: fmt.headerDate.format(state.selectedDate) })
       ]),
-      el('button', {
-        class: 'palette-button',
-        'aria-label': 'Customize accent color',
-        html: icon('palette', 22),
-        onclick: openAccentPicker
-      })
+      el('div', { class: 'header-buttons' }, [
+        el('button', {
+          class: 'palette-button',
+          'aria-label': 'Back up or restore data',
+          html: icon('backup', 22),
+          onclick: openBackupSheet
+        }),
+        el('button', {
+          class: 'palette-button',
+          'aria-label': 'Customize accent color',
+          html: icon('palette', 22),
+          onclick: openAccentPicker
+        })
+      ])
     ]);
   }
 
@@ -639,14 +648,21 @@
     ]);
   }
 
-  function showAlert(title, message) {
+  // buttons: [{ text, style: 'cancel' | 'destructive' | undefined, action }]
+  function showAlert(title, message, buttons) {
+    const list = buttons && buttons.length ? buttons : [{ text: 'OK', style: 'cancel' }];
     const root = el('div', { class: 'alert-root', role: 'alertdialog', 'aria-modal': 'true' });
+    const buttonEls = list.map((b) => el('button', {
+      class: 'alert-button' + (b.style ? ' ' + b.style : ''),
+      text: b.text,
+      onclick: () => { root.remove(); if (b.action) b.action(); }
+    }));
     root.appendChild(el('div', { class: 'alert' }, [
       el('div', { class: 'alert-body' }, [
         el('div', { class: 'alert-title', text: title }),
-        el('div', { class: 'alert-message', text: message })
+        message ? el('div', { class: 'alert-message', text: message }) : null
       ]),
-      el('button', { class: 'alert-button', text: 'OK', onclick: () => root.remove() })
+      el('div', { class: 'alert-buttons' + (list.length === 2 ? ' pair' : '') }, buttonEls)
     ]));
     document.body.appendChild(root);
   }
@@ -821,6 +837,154 @@
     });
   }
 
+  // ---------- Backup & restore (web only) ----------
+
+  const BACKUP_FORMAT = 'protein-tracker-backup';
+
+  function exportBackup() {
+    const backup = {
+      format: BACKUP_FORMAT,
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      accentColor: currentAccent(),
+      entries: store.entries
+    };
+    const json = JSON.stringify(backup, null, 2);
+    const filename = `protein-tracker-backup-${dayKey(new Date())}.json`;
+
+    // On phones, the share sheet lets the file be saved to Files, AirDropped, emailed, etc.
+    let file = null;
+    try { file = new File([json], filename, { type: 'application/json' }); } catch (_) { /* old browser */ }
+    const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    if (coarse && file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file], title: 'Protein Tracker backup' }).catch((err) => {
+        if (err && err.name === 'AbortError') return;
+        downloadFile(json, filename);
+      });
+      return;
+    }
+    downloadFile(json, filename);
+  }
+
+  function downloadFile(text, filename) {
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    const a = el('a', { href: url, download: filename });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
+  // Returns a clean entry, or null if the record isn't a valid protein entry.
+  function sanitizeEntry(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const amount = Number(raw.amount);
+    const timestamp = new Date(raw.timestamp);
+    if (typeof raw.id !== 'string' || raw.id === '') return null;
+    if (typeof raw.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(raw.date)) return null;
+    if (!Number.isFinite(amount) || amount <= 0) return null;
+    if (typeof raw.isAddition !== 'boolean') return null;
+    if (isNaN(timestamp.getTime())) return null;
+    return {
+      id: raw.id,
+      timestamp: timestamp.toISOString(),
+      date: raw.date,
+      amount: amount,
+      isAddition: raw.isAddition,
+      name: trimmedName(typeof raw.name === 'string' ? raw.name : '')
+    };
+  }
+
+  function parseBackup(text) {
+    let data;
+    try { data = JSON.parse(text); } catch (_) { return null; }
+    const rawEntries = Array.isArray(data) ? data : (data && Array.isArray(data.entries) ? data.entries : null);
+    if (!rawEntries) return null;
+    const entries = rawEntries.map(sanitizeEntry).filter(Boolean);
+    if (rawEntries.length > 0 && entries.length === 0) return null;
+    const accent = data && !Array.isArray(data) && ACCENTS[data.accentColor] ? data.accentColor : null;
+    return { entries: entries, skipped: rawEntries.length - entries.length, accentColor: accent };
+  }
+
+  function applyImport(backup, replace, done) {
+    const previous = store.entries;
+    let added = backup.entries.length;
+    if (replace) {
+      store.entries = backup.entries.slice();
+    } else {
+      const known = new Set(previous.map((e) => e.id));
+      const fresh = backup.entries.filter((e) => !known.has(e.id));
+      added = fresh.length;
+      store.entries = previous.concat(fresh);
+    }
+    if (!store.save()) {
+      store.entries = previous;
+      showAlert("Couldn't import data", 'Unable to save the imported entries.');
+      return;
+    }
+    if (replace && backup.accentColor) {
+      storageSet(ACCENT_KEY, backup.accentColor);
+      applyAccent(backup.accentColor);
+    }
+    render();
+    done();
+    const noun = (n) => `${n} ${n === 1 ? 'entry' : 'entries'}`;
+    let message = replace ? `Restored ${noun(added)}.` : `Added ${noun(added)}.`;
+    if (!replace && added < backup.entries.length) message += ` ${noun(backup.entries.length - added)} already existed.`;
+    if (backup.skipped) message += ` Skipped ${noun(backup.skipped)} that couldn't be read.`;
+    showAlert('Import complete', message);
+  }
+
+  function importBackup(done) {
+    const input = el('input', { type: 'file', accept: '.json,application/json,text/plain' });
+    input.style.display = 'none';
+    document.body.appendChild(input);
+    input.addEventListener('change', () => {
+      const file = input.files && input.files[0];
+      input.remove();
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const backup = parseBackup(String(reader.result));
+        if (!backup) {
+          showAlert("Couldn't import data", "This file isn't a Protein Tracker backup.");
+          return;
+        }
+        const count = `${backup.entries.length} ${backup.entries.length === 1 ? 'entry' : 'entries'}`;
+        showAlert('Import backup?', `The backup has ${count}. Merge adds entries you don't already have. Replace erases everything on this device first.`, [
+          { text: 'Merge', action: () => applyImport(backup, false, done) },
+          { text: 'Replace All', style: 'destructive', action: () => applyImport(backup, true, done) },
+          { text: 'Cancel', style: 'cancel' }
+        ]);
+      };
+      reader.onerror = () => showAlert("Couldn't import data", 'The file could not be read.');
+      reader.readAsText(file);
+    });
+    input.click();
+  }
+
+  function openBackupSheet() {
+    present('sheet', (dismiss) => {
+      const count = store.entries.length;
+      const body = el('div', { class: 'accent-sheet' }, [
+        el('div', {}, [
+          el('div', { class: 'accent-heading', text: 'Back up your data' }),
+          el('div', {
+            class: 'backup-note',
+            text: 'Your entries are saved only in this browser on this device. Export a backup file to keep a copy or move your log to another phone, browser, or the home-screen app.'
+          })
+        ]),
+        el('button', { class: 'add-protein-button', html: icon('backup', 20) + '<span>Export data</span>', onclick: exportBackup }),
+        el('button', { class: 'add-protein-button', html: icon('plus', 18) + '<span>Import data</span>', onclick: () => importBackup(dismiss) }),
+        el('div', { class: 'footnote', text: `${count} ${count === 1 ? 'entry' : 'entries'} on this device` })
+      ]);
+      return {
+        navBar: navBar('Backup', null, el('button', { class: 'nav-button bold', text: 'Done', onclick: dismiss })),
+        body: body
+      };
+    });
+  }
+
   // ---------- Boot ----------
 
   applyAccent(currentAccent());
@@ -834,6 +998,9 @@
     const nowKey = dayKey(new Date());
     if (nowKey !== lastToday) { lastToday = nowKey; render(); }
   });
+
+  // Ask the browser not to evict saved entries when the device is low on storage.
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
