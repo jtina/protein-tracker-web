@@ -8,9 +8,9 @@ It's plain HTML, CSS and JavaScript with no build step and no dependencies.
 
 - Week strip centered on the selected day: swipe to move one day, tap a day to scroll to it
 - Month grid view, a **Today** button, and per-day protein totals on every day cell
-- Daily total with **+** / **−** buttons and an **Add protein** button
+- Daily total with **+** / **−** buttons
 - Add/remove sheets with an optional name and an amount in grams. A removal can't be larger than the day's total.
-- Per-day log: swipe a row left to **edit** or **delete** it
+- Per-day log: tap a row to **edit** it, or swipe it left to **edit** or **delete** it
 - Accent color picker with 9 colors
 - Data is saved in the browser's `localStorage`, under the same keys the app uses (`proteinTracker.entries`, `accentColor`)
 - **Backup** (arrows button in the header): export all entries to a JSON file, or import one, either merging it in or replacing everything

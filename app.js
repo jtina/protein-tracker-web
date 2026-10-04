@@ -187,7 +187,6 @@
       case 'trash': return stroke('<path d="M4 6.5h16"/><path d="M9 6.5V4.5h6v2"/><path d="M6 6.5l1 13a1.5 1.5 0 0 0 1.5 1.4h7a1.5 1.5 0 0 0 1.5-1.4l1-13"/><path d="M10 10.5v7M14 10.5v7"/>', 2);
       case 'calendar': return stroke('<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17"/><path d="M8 3v3.5M16 3v3.5"/>', 2);
       case 'grid1x2': return stroke('<rect x="4" y="3.5" width="16" height="7.5" rx="2"/><rect x="4" y="13" width="16" height="7.5" rx="2"/>', 2);
-      case 'fork': return stroke('<path d="M7 3v6.5a2.5 2.5 0 0 0 5 0V3"/><path d="M9.5 3v18"/><path d="M17.5 21V3c-2 1.5-3 4-3 7.5 0 1.5.8 2.5 3 2.5"/>', 2);
       case 'backup': return stroke('<path d="M8 3.5v12M4.5 7 8 3.5 11.5 7"/><path d="M16 20.5v-12M12.5 17l3.5 3.5 3.5-3.5"/>', 2.2);
       case 'palette': return `<svg class="icon" width="${s}" height="${s}" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M12 2.5C6.5 2.5 2.5 6.6 2.5 11.7c0 5.2 4.2 9.8 9.3 9.8 1.6 0 2.4-.9 2.4-2 0-.6-.2-1-.5-1.4-.3-.4-.5-.8-.5-1.3 0-1 .8-1.7 1.8-1.7h2.2c2.8 0 4.8-2 4.8-4.8C22 6.6 17.6 2.5 12 2.5zM6.8 13.2a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4zm2.6-4.6a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4zm5.2 0a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4zm3.2 3.9a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4z"/></svg>`;
     }
@@ -453,11 +452,6 @@
         el('div', { class: 'spacer' }),
         el('div', { class: 'round-buttons' }, [minus, plus])
       ]),
-      el('button', {
-        class: 'add-protein-button',
-        html: icon('fork', 20) + '<span>Add protein</span>',
-        onclick: () => openAddSheet('add')
-      }),
       proteinLog()
     ]);
   }
@@ -494,7 +488,7 @@
     const kind = entry.isAddition ? 'add' : 'remove';
     let isOpen = state.openRows.has(entry.id);
 
-    const front = el('div', { class: 'log-front' }, [
+    const front = el('div', { class: 'log-front', role: 'button', 'aria-label': `Edit ${entry.name}` }, [
       el('div', { class: 'log-sign ' + kind, html: icon(entry.isAddition ? 'plus' : 'minus', 12) }),
       el('div', { class: 'log-text' }, [
         el('div', { class: 'log-name', text: entry.name }),
@@ -569,6 +563,7 @@
     front.addEventListener('click', () => {
       if (moved) return;
       if (isOpen) setOpen(false);
+      else openEditSheet(entry);
     });
 
     return el('div', { class: 'log-row' }, [actions, front]);

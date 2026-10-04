@@ -81,10 +81,10 @@ svg.icon { display: block; flex-shrink: 0; }
 
 .header { display: flex; align-items: center; }
 .header-text { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
-.header-title { font-size: 30px; font-weight: 700; line-height: 1.2; letter-spacing: 0.2px; }
+.header-title { font-size: min(30px, 7.4vw); font-weight: 700; line-height: 1.2; letter-spacing: 0.2px; white-space: nowrap; }
 .header-date { font-size: 15px; font-weight: 500; color: var(--secondary); }
 
-.header-buttons { display: flex; gap: 10px; }
+.header-buttons { display: flex; gap: 10px; flex-shrink: 0; margin-left: 10px; }
 
 .palette-button {
   width: 44px;
@@ -247,6 +247,7 @@ svg.icon { display: block; flex-shrink: 0; }
   padding: 10px 2px;
   background: var(--bg);
   touch-action: pan-y;
+  cursor: pointer;
   will-change: transform;
   -webkit-user-select: none;
   user-select: none;
