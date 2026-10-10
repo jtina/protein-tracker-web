@@ -49,7 +49,7 @@
     { id: 'whole-milk', n: 'Whole milk', k: ['whole milk'], p: 3.2, c: 61, cup: 244 },
     { id: 'protein-milk', n: 'Ultra-filtered milk (Fairlife)', k: ['fairlife', 'fairlife milk', 'ultra filtered milk', 'ultrafiltered milk', 'protein milk'], p: 5.4, c: 46, cup: 240 },
     { id: 'skim-milk', n: 'Skim milk', k: ['skim milk', 'nonfat milk', 'fat free milk'], p: 3.4, c: 34, cup: 245 },
-    { id: 'greek-yogurt', n: 'Greek yogurt, plain', k: ['greek yogurt', 'greek yoghurt', 'skyr'], p: 10, c: 73, cup: 245 },
+    { id: 'greek-yogurt', n: 'Greek yogurt, plain', k: ['greek yogurt', 'greek yoghurt', 'skyr', 'quark', 'protein yogurt', 'high protein yogurt'], p: 10, c: 73, cup: 245 },
     { id: 'yogurt', n: 'Yogurt, plain', k: ['yogurt', 'yoghurt', 'plain yogurt'], p: 3.5, c: 61, cup: 245 },
     { id: 'cottage-cheese', n: 'Cottage cheese', k: ['cottage cheese'], p: 10.5, c: 81, cup: 226 },
     { id: 'cheddar', n: 'Cheddar cheese', k: ['cheddar', 'cheddar cheese', 'cheese', 'shredded cheese', 'mexican cheese', 'colby jack', 'monterey jack', 'swiss cheese'], p: 23.3, c: 409, cup: 113, each: 28 },

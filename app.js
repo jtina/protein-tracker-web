@@ -266,6 +266,20 @@
     return fmt.grams.format(Math.round(value));
   }
 
+  /** Built-in foods best matching some words, best first. */
+  function searchFoods(query, limit) {
+    const words = N.normalize(query).split(' ').filter((w) => w.length > 1 && !/^\d/.test(w));
+    if (!words.length) return [];
+    const scored = N.FOODS.map((f) => {
+      const name = N.normalize(f.n);
+      const hay = name + ' ' + N.normalize(f.k.join(' '));
+      const score = words.reduce((sc, w) => sc + (hay.includes(w) ? (name.includes(w) ? 2 : 1) : 0), 0);
+      return { f, score };
+    }).filter((x) => x.score > 0);
+    scored.sort((a, b) => b.score - a.score || a.f.n.localeCompare(b.f.n));
+    return scored.slice(0, limit || 8).map((x) => x.f);
+  }
+
   /** Analysis with the per-serving numbers in use: the app's estimate, or the source's if chosen. */
   function recipeNumbers(recipe) {
     const a = N.analyzeRecipe(recipe);
@@ -841,6 +855,69 @@
       confirm.addEventListener('click', submit);
       refresh();
 
+      // A single food ("200g chicken breast", "2 eggs") fills in the name and protein.
+      let nameFromFood = '';
+      let amountFromFood = '';
+      nameInput.addEventListener('input', () => { nameFromFood = ''; });
+      amountInput.addEventListener('input', () => { amountFromFood = ''; });
+      const clearFromFood = () => {
+        if (amountFromFood && amountInput.value === amountFromFood) amountInput.value = '';
+        if (nameFromFood && nameInput.value === nameFromFood) nameInput.value = '';
+        amountFromFood = '';
+        nameFromFood = '';
+        refresh();
+      };
+      const foodInput = el('input', {
+        class: 'name-input',
+        type: 'text',
+        placeholder: 'e.g. 200g chicken breast or 2 eggs',
+        autocomplete: 'off',
+        autocapitalize: 'off',
+        enterkeyhint: 'done',
+        'aria-label': 'Food and amount'
+      });
+      const foodResult = el('div', { class: 'food-calc' });
+      function calcFood() {
+        const text = foodInput.value.trim();
+        foodResult.replaceChildren();
+        if (!text) { clearFromFood(); return; }
+        const it = N.analyzeLine(text);
+        if ((it.status === 'ok' || it.status === 'estimate') && it.protein > 0) {
+          foodResult.append(el('div', { class: 'food-calc-line', text:
+            `${it.food.n} · ${formatGrams(it.grams)} g${it.status === 'estimate' ? ' (estimated)' : ''} = ${formatGrams(it.protein)}g protein · ${formatKcal(it.kcal)} kcal` }));
+          amountInput.value = amountFromFood = fmt.editAmount.format(Math.round(it.protein * 10) / 10);
+          if (!nameInput.value.trim() || nameInput.value === nameFromFood) {
+            const typed = it.parsed.text.replace(/\s+/g, ' ');
+            nameInput.value = nameFromFood = (typed.charAt(0).toUpperCase() + typed.slice(1)).slice(0, 60);
+          }
+          refresh();
+          return;
+        }
+        clearFromFood();
+        let hint = 'Not in the food list. Try another name:';
+        if (it.status === 'noamount') hint = it.food ? `${it.food.n}: add an amount, like 150g, 1 cup or 2.` : 'Add an amount, like 150g, 1 cup or 2.';
+        else if (it.status === 'ok' && it.food) hint = `${it.food.n} has no protein.`;
+        foodResult.append(el('div', { class: 'field-hint', text: hint }));
+        if (it.status === 'unmatched') {
+          const amount = (it.parsed.text.match(/^\s*[\d½⅓⅔¼¾⅛.,/ ]+\s*(?:[a-zA-Z]+\.?\s+)?/) || [''])[0];
+          const words = it.parsed.food || text;
+          const picks = searchFoods(words, 5);
+          if (picks.length) {
+            foodResult.append(el('div', { class: 'recipe-chips' }, picks.map((f) => el('button', {
+              class: 'recipe-chip',
+              text: f.n,
+              onclick: () => {
+                const qty = amount.trim();
+                foodInput.value = (qty && N.parseLine(qty + ' x').qty != null ? qty + ' ' : '100g ') + f.k[0];
+                calcFood();
+              }
+            }))));
+          }
+        }
+      }
+      foodInput.addEventListener('input', calcFood);
+      foodInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if (canConfirm()) submit(); } });
+
       const body = el('div', { class: 'add-sheet' }, [
         el('div', { class: 'add-title-block' }, [
           el('div', { class: 'add-title', text: isAdd ? 'Add protein' : 'Remove protein' }),
@@ -861,6 +938,11 @@
               }
             });
           }))
+        ]) : null,
+        isAdd ? el('div', {}, [
+          el('div', { class: 'field-label', text: 'From a food (works out the protein)' }),
+          foodInput,
+          foodResult
         ]) : null,
         el('div', { class: 'amount-block' }, [amountInput, el('div', { class: 'grams-label', text: 'grams' })]),
         el('div', {
@@ -1486,16 +1568,8 @@
       const results = el('div', { class: 'food-results' });
       const keepGrams = () => (current.grams != null ? { grams: current.grams } : {});
       function renderResults() {
-        const q = N.normalize(searchInput.value);
-        const words = q.split(' ').filter((w) => w.length > 1);
-        let foods = N.FOODS.map((f) => {
-          const hay = N.normalize(f.n + ' ' + f.k.join(' '));
-          const score = words.reduce((sc, w) => sc + (hay.includes(w) ? (N.normalize(f.n).includes(w) ? 2 : 1) : 0), 0);
-          return { f, score };
-        }).filter((x) => !words.length || x.score > 0);
-        foods.sort((a, b) => b.score - a.score || a.f.n.localeCompare(b.f.n));
-        foods = foods.slice(0, 8);
-        results.replaceChildren(...foods.map(({ f }) => el('button', {
+        const foods = searchFoods(searchInput.value, 8);
+        results.replaceChildren(...foods.map((f) => el('button', {
           class: 'food-result' + (item.food && item.food.id === f.id ? ' selected' : ''),
           onclick: () => apply(Object.assign({ foodId: f.id }, keepGrams()))
         }, [
