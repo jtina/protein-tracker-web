@@ -36,6 +36,10 @@ The app will be served at `https://<user>.github.io/protein-tracker-web/`.
 
 On iPhone, open the URL in Safari and choose **Share → Add to Home Screen**. It then launches full-screen like the native app.
 
+## Works offline
+
+Everything except looking things up online works without a connection: logging, the log and calendar, recipes and the protein calculator, the food list, and scanning packages you've scanned before. The app's files are cached on the phone after the first visit. With cloud sync on, changes made offline are kept on the phone and upload automatically when the connection comes back. Online-only: importing from links, Open Food Facts lookups for new packages, and the first download of the barcode reader.
+
 ## Where your data lives
 
 Entries are saved in the browser on the device you use (in `localStorage`). Unless you turn on cloud sync, nothing is uploaded anywhere. That means:

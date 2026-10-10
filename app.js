@@ -2355,7 +2355,7 @@
   // ---------- Backup & restore (web only) ----------
 
   const BACKUP_FORMAT = 'protein-tracker-backup';
-  const APP_VERSION = '18';
+  const APP_VERSION = '19';
 
   function exportBackup() {
     const backup = {
@@ -2621,7 +2621,12 @@
         const session = res && res.data && res.data.session;
         user = session && session.user ? session.user : null;
         if (accountId()) { linkAccount(); checkPin(); } else setStatus('signedout');
-      }).catch((err) => setStatus('error', (err && err.message) || 'Couldn’t connect.'));
+      }).catch((err) => {
+        started = false;
+        setStatus('error', navigator.onLine === false
+          ? 'You’re offline. Everything you log is saved on this phone and syncs when you’re back online.'
+          : (err && err.message) || 'Couldn’t connect.');
+      });
     }
 
     function checkPin() {
@@ -2840,9 +2845,16 @@
       start();
     }
 
+    // Back online or back in the app: connect if an earlier attempt failed (e.g. opened offline), then sync.
+    function wake() {
+      if (!client && started && status !== 'connecting') { started = false; startIfUsed(); return; }
+      syncNow();
+    }
+
     return {
       start: ensureStarted,
       startIfUsed: startIfUsed,
+      wake: wake,
       changed: changed,
       deleted: deleted,
       markAll: () => markAll(false),
@@ -3061,14 +3073,14 @@
   render();
 
   cloud.startIfUsed();
-  setInterval(() => { if (document.visibilityState === 'visible') cloud.syncNow(); }, 60000);
-  window.addEventListener('online', () => cloud.syncNow());
+  setInterval(() => { if (document.visibilityState === 'visible') cloud.wake(); }, 60000);
+  window.addEventListener('online', () => cloud.wake());
 
   // Keep "today" highlighting correct if the app is left open past midnight or resumed later.
   let lastToday = dayKey(new Date());
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
-    cloud.syncNow();
+    cloud.wake();
     const nowKey = dayKey(new Date());
     if (nowKey !== lastToday) { lastToday = nowKey; render(); }
   });
