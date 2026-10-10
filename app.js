@@ -175,6 +175,90 @@
     }
   };
 
+  // ---------- Recipes ----------
+
+  const RECIPES_KEY = 'proteinTracker.recipes';
+  const N = window.PTNutrition;
+
+  // Returns a clean recipe, or null if the record isn't a valid recipe.
+  function sanitizeRecipe(raw) {
+    if (!raw || typeof raw !== 'object' || typeof raw.id !== 'string' || !raw.id) return null;
+    if (typeof raw.text !== 'string') return null;
+    const servings = Number(raw.servings);
+    const weight = Number(raw.weight);
+    const overrides = {};
+    if (raw.overrides && typeof raw.overrides === 'object') {
+      Object.keys(raw.overrides).forEach((k) => {
+        const o = raw.overrides[k];
+        if (!o || typeof o !== 'object') return;
+        const clean = {};
+        if (typeof o.foodId === 'string' && N.FOOD_BY_ID[o.foodId]) clean.foodId = o.foodId;
+        if (o.custom && typeof o.custom === 'object' && Number.isFinite(+o.custom.p) && Number.isFinite(+o.custom.c)) {
+          clean.custom = { name: String(o.custom.name || 'Custom food').slice(0, 80), p: +o.custom.p, c: +o.custom.c };
+          if (+o.custom.each > 0) clean.custom.each = +o.custom.each;
+        }
+        if (Number.isFinite(+o.grams) && o.grams !== null && o.grams !== '' && +o.grams >= 0) clean.grams = +o.grams;
+        if (o.manual && typeof o.manual === 'object') clean.manual = { protein: Math.max(0, +o.manual.protein || 0), kcal: Math.max(0, +o.manual.kcal || 0) };
+        if (Object.keys(clean).length) overrides[k] = clean;
+      });
+    }
+    return {
+      id: raw.id,
+      name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim().slice(0, 80) : 'Recipe',
+      servings: Number.isFinite(servings) && servings > 0 ? servings : 1,
+      weight: Number.isFinite(weight) && weight > 0 ? weight : null,
+      text: raw.text,
+      overrides: overrides,
+      updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date().toISOString()
+    };
+  }
+
+  const recipes = {
+    list: [],
+
+    load() {
+      const raw = storageGet(RECIPES_KEY);
+      if (!raw) { this.list = []; return; }
+      try {
+        const parsed = JSON.parse(raw);
+        this.list = Array.isArray(parsed) ? parsed.map(sanitizeRecipe).filter(Boolean) : [];
+      } catch (e) {
+        console.error('Failed to load recipes:', e);
+        this.list = [];
+      }
+    },
+
+    save() {
+      return storageSet(RECIPES_KEY, JSON.stringify(this.list));
+    },
+
+    sorted() {
+      return this.list.slice().sort((a, b) => a.name.localeCompare(b.name));
+    },
+
+    upsert(recipe) {
+      const previous = this.list.slice();
+      const index = this.list.findIndex((r) => r.id === recipe.id);
+      const clean = sanitizeRecipe(Object.assign({}, recipe, { updatedAt: new Date().toISOString() }));
+      if (index >= 0) this.list[index] = clean; else this.list.push(clean);
+      if (this.save()) return true;
+      this.list = previous;
+      return false;
+    },
+
+    remove(id) {
+      const previous = this.list.slice();
+      this.list = this.list.filter((r) => r.id !== id);
+      if (this.save()) return true;
+      this.list = previous;
+      return false;
+    }
+  };
+
+  function formatKcal(value) {
+    return fmt.grams.format(Math.round(value));
+  }
+
   // ---------- Icons (SF Symbols look-alikes) ----------
 
   function icon(name, size) {
@@ -188,6 +272,11 @@
       case 'calendar': return stroke('<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17"/><path d="M8 3v3.5M16 3v3.5"/>', 2);
       case 'grid1x2': return stroke('<rect x="4" y="3.5" width="16" height="7.5" rx="2"/><rect x="4" y="13" width="16" height="7.5" rx="2"/>', 2);
       case 'backup': return stroke('<path d="M8 3.5v12M4.5 7 8 3.5 11.5 7"/><path d="M16 20.5v-12M12.5 17l3.5 3.5 3.5-3.5"/>', 2.2);
+      case 'book': return stroke('<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/><path d="M8.5 7.5h7"/>', 2);
+      case 'upload': return stroke('<path d="M12 15.5V4M7.5 8.5 12 4l4.5 4.5"/><path d="M4.5 14.5v3a2.5 2.5 0 0 0 2.5 2.5h10a2.5 2.5 0 0 0 2.5-2.5v-3"/>', 2.2);
+      case 'search': return stroke('<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 20.5 20.5"/>', 2.4);
+      case 'chevron': return stroke('<path d="M9 5.5 15.5 12 9 18.5"/>', 2.4);
+      case 'warn': return stroke('<path d="M12 4 21 19.5H3z"/><path d="M12 10v4.5M12 17.2v.1"/>', 2.2);
       case 'palette': return `<svg class="icon" width="${s}" height="${s}" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M12 2.5C6.5 2.5 2.5 6.6 2.5 11.7c0 5.2 4.2 9.8 9.3 9.8 1.6 0 2.4-.9 2.4-2 0-.6-.2-1-.5-1.4-.3-.4-.5-.8-.5-1.3 0-1 .8-1.7 1.8-1.7h2.2c2.8 0 4.8-2 4.8-4.8C22 6.6 17.6 2.5 12 2.5zM6.8 13.2a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4zm2.6-4.6a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4zm5.2 0a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4zm3.2 3.9a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4z"/></svg>`;
     }
     return '';
@@ -452,6 +541,11 @@
         el('div', { class: 'spacer' }),
         el('div', { class: 'round-buttons' }, [minus, plus])
       ]),
+      el('button', {
+        class: 'add-protein-button',
+        html: icon('book', 20) + '<span>Recipes</span>',
+        onclick: openRecipesSheet
+      }),
       proteinLog()
     ]);
   }
@@ -728,6 +822,21 @@
           el('div', { class: 'add-date', text: fmt.sheetDate.format(date) })
         ]),
         el('div', {}, [el('div', { class: 'field-label', text: 'Protein name' }), nameInput]),
+        isAdd && recipes.list.length ? el('div', {}, [
+          el('div', { class: 'field-label', text: 'From a recipe (1 serving)' }),
+          el('div', { class: 'recipe-chips' }, recipes.sorted().map((r) => {
+            const per = N.analyzeRecipe(r).perServing;
+            return el('button', {
+              class: 'recipe-chip',
+              text: `${r.name} · ${formatGrams(per.protein)}g`,
+              onclick: () => {
+                nameInput.value = r.name;
+                amountInput.value = fmt.editAmount.format(Math.round(per.protein * 10) / 10);
+                refresh();
+              }
+            });
+          }))
+        ]) : null,
         el('div', { class: 'amount-block' }, [amountInput, el('div', { class: 'grams-label', text: 'grams' })]),
         el('div', {
           class: 'current-total',
@@ -832,6 +941,450 @@
     });
   }
 
+  // ---------- Recipes list ----------
+
+  function openRecipesSheet() {
+    let dismissSheet = null;
+    const list = el('div', { class: 'recipe-list' });
+
+    function renderList() {
+      const all = recipes.sorted();
+      if (!all.length) {
+        list.replaceChildren(el('div', { class: 'recipe-empty' }, [
+          el('div', { class: 'recipe-empty-title', text: 'No recipes yet' }),
+          el('div', { text: 'Add a recipe and its ingredients, and the app works out protein and calories per serving.' })
+        ]));
+        return;
+      }
+      list.replaceChildren(...all.map((r) => {
+        const a = N.analyzeRecipe(r);
+        const per = a.perServing;
+        return el('div', { class: 'recipe-row' }, [
+          el('button', { class: 'recipe-row-main', 'aria-label': `Open ${r.name}`, onclick: () => openRecipeEditor(r, renderList) }, [
+            el('div', { class: 'recipe-row-name', text: r.name }),
+            el('div', { class: 'recipe-row-sub', text: `${formatGrams(per.protein)}g protein · ${formatKcal(per.kcal)} kcal per serving` + (a.issues ? ` · ${a.issues} to fix` : '') })
+          ]),
+          el('button', {
+            class: 'recipe-log-button',
+            text: 'Log',
+            'aria-label': `Log ${r.name}`,
+            onclick: () => openLogRecipe(r, () => { if (dismissSheet) dismissSheet(); })
+          })
+        ]);
+      }));
+    }
+
+    present('sheet', (dismiss) => {
+      dismissSheet = dismiss;
+      renderList();
+      const body = el('div', { class: 'accent-sheet' }, [
+        el('div', { class: 'recipe-actions' }, [
+          el('button', { class: 'add-protein-button', html: icon('plus', 18) + '<span>New recipe</span>', onclick: () => openRecipeEditor(null, renderList) }),
+          el('button', {
+            class: 'add-protein-button',
+            html: icon('upload', 19) + '<span>Upload</span>',
+            onclick: () => pickTextFile((text) => openRecipeEditor(null, renderList, N.extractRecipe(text)))
+          })
+        ]),
+        list
+      ]);
+      return {
+        navBar: navBar('Recipes', null, el('button', { class: 'nav-button bold', text: 'Done', onclick: dismiss })),
+        body: body
+      };
+    });
+  }
+
+  function pickTextFile(onText) {
+    const input = el('input', { type: 'file', accept: '.txt,.md,.text,.rtf,.csv,text/*' });
+    input.style.display = 'none';
+    document.body.appendChild(input);
+    input.addEventListener('change', () => {
+      const file = input.files && input.files[0];
+      input.remove();
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => onText(String(reader.result));
+      reader.onerror = () => showAlert("Couldn't open file", 'The file could not be read.');
+      reader.readAsText(file);
+    });
+    input.click();
+  }
+
+  // ---------- Recipe editor ----------
+
+  function openRecipeEditor(existing, onSaved, preset) {
+    const draft = existing
+      ? JSON.parse(JSON.stringify(existing))
+      : { id: uuid(), name: (preset && preset.name) || '', servings: (preset && preset.servings) || 4, weight: null, text: (preset && preset.text) || '', overrides: {} };
+    const startState = JSON.stringify(draft);
+
+    present('cover', (dismiss) => {
+      const nameInput = el('input', { class: 'name-input', type: 'text', placeholder: 'Recipe name', autocapitalize: 'words', autocomplete: 'off', 'aria-label': 'Recipe name' });
+      nameInput.value = draft.name;
+      const servingsInput = el('input', { class: 'small-input', type: 'text', inputmode: 'decimal', autocomplete: 'off', 'aria-label': 'Servings' });
+      servingsInput.value = String(draft.servings);
+      const weightInput = el('input', { class: 'small-input', type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: 'Optional', 'aria-label': 'Total cooked weight in grams' });
+      weightInput.value = draft.weight ? String(draft.weight) : '';
+      const textInput = el('textarea', {
+        class: 'recipe-text',
+        rows: '7',
+        autocapitalize: 'sentences',
+        'aria-label': 'Ingredients',
+        placeholder: 'One ingredient per line, e.g.\n1 lb chicken breast\n1 cup rice\n2 tbsp olive oil\n1 (15 oz) can black beans'
+      });
+      textInput.value = draft.text;
+
+      const summary = el('div', { class: 'recipe-summary' });
+      const breakdown = el('div', { class: 'ingredient-list' });
+      const save = el('button', { class: 'nav-button bold', text: 'Save' });
+
+      function sync() {
+        draft.name = nameInput.value;
+        const sv = parseAmount(servingsInput.value, true);
+        draft.servings = sv && sv > 0 ? sv : 1;
+        const w = parseAmount(weightInput.value, true);
+        draft.weight = w && w > 0 ? w : null;
+        draft.text = textInput.value;
+        // Drop fixes for lines that no longer exist.
+        const keys = new Set(draft.text.split(/\r?\n/).map(N.lineKey));
+        Object.keys(draft.overrides).forEach((k) => { if (!keys.has(k)) delete draft.overrides[k]; });
+        save.disabled = !draft.name.trim() || !draft.text.trim();
+        renderAnalysis();
+      }
+
+      function renderAnalysis() {
+        const a = N.analyzeRecipe(draft);
+        const per = a.perServing;
+        summary.replaceChildren(...[
+          el('div', { class: 'summary-label', text: 'Per serving' }),
+          el('div', { class: 'summary-numbers' }, [
+            el('div', { class: 'summary-stat' }, [
+              el('span', { class: 'summary-big', text: formatGrams(per.protein) }),
+              el('span', { class: 'summary-unit accent', text: 'g protein' })
+            ]),
+            el('div', { class: 'summary-stat' }, [
+              el('span', { class: 'summary-big', text: formatKcal(per.kcal) }),
+              el('span', { class: 'summary-unit', text: 'kcal' })
+            ])
+          ]),
+          el('div', { class: 'summary-sub', text:
+            `Whole recipe: ${formatGrams(a.total.protein)}g protein · ${formatKcal(a.total.kcal)} kcal · ${fmt.editAmount.format(a.servings)} ${a.servings === 1 ? 'serving' : 'servings'}` +
+            (per.grams ? ` · about ${formatGrams(per.grams)} g each` : '') }),
+          a.issues ? el('div', { class: 'summary-warn', html: icon('warn', 15) + `<span>${a.issues} ${a.issues === 1 ? 'ingredient isn’t' : 'ingredients aren’t'} counted yet. Tap ${a.issues === 1 ? 'it' : 'them'} below to fix.</span>` }) : null
+        ].filter(Boolean));
+
+        if (!a.items.length) {
+          breakdown.replaceChildren();
+          return;
+        }
+        breakdown.replaceChildren(
+          el('div', { class: 'field-label', text: 'Ingredients' }),
+          ...a.items.map((it) => {
+            const bad = it.status === 'unmatched' || it.status === 'noamount';
+            const detail = it.status === 'skip'
+              ? (it.note || 'Not counted')
+              : bad
+                ? (it.food ? `${it.food.n} · ${it.note}` : it.note)
+                : `${it.food.n}${it.grams != null ? ` · ${formatGrams(it.grams)} g` : ''}${it.status === 'estimate' ? ' (estimated)' : ''}`;
+            return el('button', {
+              class: 'ingredient-row' + (bad ? ' bad' : '') + (it.status === 'skip' ? ' skipped' : ''),
+              onclick: () => {
+                if (/:$/.test(it.line.trim())) return; // headings
+                openIngredientFix(it, draft, () => renderAnalysis());
+              }
+            }, [
+              el('div', { class: 'ingredient-text' }, [
+                el('div', { class: 'ingredient-line', text: it.parsed.text || it.line }),
+                el('div', { class: 'ingredient-detail', text: detail })
+              ]),
+              el('div', { class: 'ingredient-values' }, bad || it.status === 'skip' ? [] : [
+                el('div', { class: 'ingredient-protein', text: `${formatGrams(it.protein)}g` }),
+                el('div', { class: 'ingredient-kcal', text: `${formatKcal(it.kcal)} kcal` })
+              ]),
+              el('span', { class: 'ingredient-chevron', html: icon('chevron', 14) })
+            ]);
+          })
+        );
+      }
+
+      [nameInput, servingsInput, weightInput, textInput].forEach((input) => input.addEventListener('input', sync));
+
+      const confirmDiscard = () => {
+        draft.name = nameInput.value;
+        if (JSON.stringify(draft) === startState) { dismiss(); return; }
+        showAlert('Discard changes?', 'Your changes to this recipe won’t be saved.', [
+          { text: 'Discard', style: 'destructive', action: dismiss },
+          { text: 'Keep editing', style: 'cancel' }
+        ]);
+      };
+
+      save.addEventListener('click', () => {
+        sync();
+        if (save.disabled) return;
+        if (!recipes.upsert(draft)) {
+          showAlert("Couldn't save recipe", 'Unable to save this recipe.');
+          return;
+        }
+        if (onSaved) onSaved();
+        dismiss();
+      });
+
+      const upload = el('button', {
+        class: 'text-button',
+        html: icon('upload', 16) + '<span>Upload recipe file</span>',
+        onclick: () => pickTextFile((text) => {
+          const ex = N.extractRecipe(text);
+          if (ex.name && !nameInput.value.trim()) nameInput.value = ex.name;
+          if (ex.servings) servingsInput.value = String(ex.servings);
+          textInput.value = ex.text;
+          sync();
+        })
+      });
+
+      const body = el('div', { class: 'edit-sheet recipe-editor' }, [
+        el('div', {}, [el('div', { class: 'field-label', text: 'Name' }), nameInput]),
+        el('div', { class: 'recipe-fields' }, [
+          el('label', { class: 'recipe-field' }, [el('span', { class: 'field-label', text: 'Servings' }), servingsInput]),
+          el('label', { class: 'recipe-field' }, [el('span', { class: 'field-label', text: 'Cooked weight (g)' }), weightInput])
+        ]),
+        el('div', {}, [
+          el('div', { class: 'field-row' }, [el('div', { class: 'field-label', text: 'Ingredients' }), upload]),
+          textInput,
+          el('div', { class: 'field-hint', text: 'Paste a recipe or type one ingredient per line. Section headings and steps are skipped.' })
+        ]),
+        summary,
+        breakdown,
+        existing ? el('button', {
+          class: 'delete-text-button',
+          text: 'Delete recipe',
+          onclick: () => showAlert(`Delete “${existing.name}”?`, 'Entries you already logged from it stay in your log.', [
+            { text: 'Delete', style: 'destructive', action: () => { recipes.remove(existing.id); if (onSaved) onSaved(); dismiss(); } },
+            { text: 'Cancel', style: 'cancel' }
+          ])
+        }) : null
+      ]);
+
+      sync();
+      return {
+        navBar: navBar(existing ? 'Edit Recipe' : 'New Recipe', el('button', { class: 'nav-button', text: 'Cancel', onclick: confirmDiscard }), save),
+        body: body,
+        onShow: () => { if (!existing && !draft.name) nameInput.focus({ preventScroll: true }); }
+      };
+    });
+  }
+
+  // ---------- Fix one ingredient ----------
+
+  function openIngredientFix(item, draft, onChange) {
+    const key = N.lineKey(item.line);
+    const current = draft.overrides[key] || {};
+
+    present('sheet', (dismiss) => {
+      const apply = (ov) => {
+        if (ov) draft.overrides[key] = ov; else delete draft.overrides[key];
+        onChange();
+        dismiss();
+      };
+
+      // Weight
+      const gramsInput = el('input', { class: 'small-input', type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: 'grams', 'aria-label': 'Weight in grams' });
+      if (current.grams != null) gramsInput.value = fmt.editAmount.format(current.grams);
+      else if (item.grams != null) gramsInput.value = fmt.editAmount.format(Math.round(item.grams));
+      const setWeight = el('button', {
+        class: 'pill-button',
+        text: 'Use weight',
+        onclick: () => {
+          const g = parseAmount(gramsInput.value, true);
+          if (g === null || g < 0) return;
+          const ov = Object.assign({}, current, { grams: g });
+          delete ov.manual;
+          if (!ov.foodId && !ov.custom && item.food && item.food.id && item.food.id !== 'custom') ov.foodId = item.food.id;
+          apply(ov);
+        }
+      });
+
+      // Built-in foods
+      const searchInput = el('input', { class: 'search-input', type: 'search', placeholder: 'Search foods', autocomplete: 'off', 'aria-label': 'Search foods' });
+      searchInput.value = item.parsed.food || '';
+      const results = el('div', { class: 'food-results' });
+      const keepGrams = () => (current.grams != null ? { grams: current.grams } : {});
+      function renderResults() {
+        const q = N.normalize(searchInput.value);
+        const words = q.split(' ').filter((w) => w.length > 1);
+        let foods = N.FOODS.map((f) => {
+          const hay = N.normalize(f.n + ' ' + f.k.join(' '));
+          const score = words.reduce((sc, w) => sc + (hay.includes(w) ? (N.normalize(f.n).includes(w) ? 2 : 1) : 0), 0);
+          return { f, score };
+        }).filter((x) => !words.length || x.score > 0);
+        foods.sort((a, b) => b.score - a.score || a.f.n.localeCompare(b.f.n));
+        foods = foods.slice(0, 8);
+        results.replaceChildren(...foods.map(({ f }) => el('button', {
+          class: 'food-result' + (item.food && item.food.id === f.id ? ' selected' : ''),
+          onclick: () => apply(Object.assign({ foodId: f.id }, keepGrams()))
+        }, [
+          el('span', { class: 'food-name', text: f.n }),
+          el('span', { class: 'food-per', text: `${f.p}g protein · ${f.c} kcal / 100 g` })
+        ])));
+        if (!foods.length) results.replaceChildren(el('div', { class: 'field-hint', text: 'No match in the built-in list. Try searching online below.' }));
+      }
+      searchInput.addEventListener('input', () => { renderResults(); online.replaceChildren(); });
+      renderResults();
+
+      // Open Food Facts
+      const online = el('div', { class: 'food-results' });
+      const onlineButton = el('button', {
+        class: 'add-protein-button compact',
+        html: icon('search', 17) + '<span>Search Open Food Facts</span>',
+        onclick: () => searchOnline(searchInput.value)
+      });
+      function searchOnline(q) {
+        q = String(q || '').trim();
+        if (!q) return;
+        online.replaceChildren(el('div', { class: 'field-hint', text: 'Searching…' }));
+        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = setTimeout(() => ctrl && ctrl.abort(), 12000);
+        const url = 'https://world.openfoodfacts.org/cgi/search.pl?search_simple=1&action=process&json=1&page_size=12' +
+          '&fields=product_name,brands,nutriments,serving_quantity&search_terms=' + encodeURIComponent(q);
+        fetch(url, ctrl ? { signal: ctrl.signal } : undefined)
+          .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+          .then((data) => {
+            const foods = (data.products || []).map(N.fromOpenFoodFacts).filter(Boolean).slice(0, 8);
+            if (!foods.length) {
+              online.replaceChildren(el('div', { class: 'field-hint', text: 'Nothing found with nutrition info. Try fewer words, or enter the numbers yourself.' }));
+              return;
+            }
+            online.replaceChildren(...foods.map((f) => el('button', {
+              class: 'food-result',
+              onclick: () => apply(Object.assign({ custom: f }, keepGrams()))
+            }, [
+              el('span', { class: 'food-name', text: f.name }),
+              el('span', { class: 'food-per', text: `${f.p}g protein · ${f.c} kcal / 100 g` + (f.each ? ` · serving ${formatGrams(f.each)} g` : '') })
+            ])));
+          })
+          .catch(() => online.replaceChildren(el('div', { class: 'field-hint', text: 'Couldn’t reach Open Food Facts. Check your connection, or enter the numbers yourself.' })))
+          .finally(() => clearTimeout(timer));
+      }
+
+      // Manual totals
+      const pInput = el('input', { class: 'small-input', type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: 'Protein g', 'aria-label': 'Protein in grams' });
+      const cInput = el('input', { class: 'small-input', type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: 'kcal', 'aria-label': 'Calories' });
+      if (current.manual) {
+        pInput.value = fmt.editAmount.format(current.manual.protein);
+        cInput.value = fmt.editAmount.format(current.manual.kcal);
+      }
+      const setManual = el('button', {
+        class: 'pill-button',
+        text: 'Use these',
+        onclick: () => {
+          const p = parseAmount(pInput.value || '0', true);
+          const c = parseAmount(cInput.value || '0', true);
+          if (p === null || c === null || p < 0 || c < 0) return;
+          apply({ manual: { protein: p, kcal: c } });
+        }
+      });
+
+      const body = el('div', { class: 'accent-sheet fix-sheet' }, [
+        el('div', {}, [
+          el('div', { class: 'fix-line', text: item.parsed.text || item.line }),
+          el('div', { class: 'field-hint', text: item.status === 'manual' ? 'Using numbers you entered.' : item.food ? `Counted as ${item.food.n}${item.grams != null ? `, ${formatGrams(item.grams)} g` : ''}.` : 'Not counted yet.' })
+        ]),
+        el('div', {}, [
+          el('div', { class: 'field-label', text: 'Weight' }),
+          el('div', { class: 'inline-form' }, [gramsInput, el('span', { class: 'unit-label', text: 'g' }), setWeight])
+        ]),
+        el('div', {}, [
+          el('div', { class: 'field-label', text: 'Food' }),
+          searchInput,
+          results,
+          onlineButton,
+          online
+        ]),
+        el('div', {}, [
+          el('div', { class: 'field-label', text: 'Or enter it yourself (for this line)' }),
+          el('div', { class: 'inline-form' }, [pInput, cInput, setManual])
+        ]),
+        draft.overrides[key] ? el('button', { class: 'delete-text-button', text: 'Undo my changes', onclick: () => apply(null) }) : null
+      ]);
+
+      return {
+        navBar: navBar('Fix Ingredient', null, el('button', { class: 'nav-button bold', text: 'Done', onclick: dismiss })),
+        body: body
+      };
+    });
+  }
+
+  // ---------- Log servings of a recipe ----------
+
+  function openLogRecipe(recipe, afterLog) {
+    const date = state.selectedDate;
+    const a = N.analyzeRecipe(recipe);
+    const per = a.perServing;
+
+    present('cover', (dismiss) => {
+      let servings = 1;
+      const servingsInput = el('input', { class: 'amount-input', type: 'text', inputmode: 'decimal', autocomplete: 'off', 'aria-label': 'Servings' });
+      const gramsInput = per.grams ? el('input', { class: 'small-input', type: 'text', inputmode: 'decimal', autocomplete: 'off', 'aria-label': 'Grams eaten' }) : null;
+      const stats = el('div', { class: 'current-total' });
+      const confirm = el('button', { class: 'confirm-button' });
+      confirm.style.background = 'var(--accent)';
+
+      function show(from) {
+        if (from !== 'servings') servingsInput.value = fmt.editAmount.format(Math.round(servings * 100) / 100);
+        if (gramsInput && from !== 'grams') gramsInput.value = fmt.editAmount.format(Math.round(servings * per.grams));
+        const protein = per.protein * servings;
+        stats.textContent = `${formatGrams(protein)}g protein · ${formatKcal(per.kcal * servings)} kcal`;
+        confirm.textContent = servings > 0 ? `Add ${formatGrams(protein)}g` : 'Add protein';
+        confirm.disabled = !(servings > 0) || !(protein > 0);
+      }
+      const step = (d) => { servings = Math.max(0.25, Math.round((servings + d) * 4) / 4); show(); };
+
+      servingsInput.addEventListener('input', () => {
+        const v = parseAmount(servingsInput.value, true);
+        servings = v && v > 0 ? v : 0;
+        show('servings');
+      });
+      if (gramsInput) gramsInput.addEventListener('input', () => {
+        const g = parseAmount(gramsInput.value, true);
+        servings = g && g > 0 ? g / per.grams : 0;
+        show('grams');
+      });
+      confirm.addEventListener('click', () => {
+        const protein = Math.round(per.protein * servings * 10) / 10;
+        if (!(protein > 0)) return;
+        if (!store.add(protein, recipe.name, date)) {
+          showAlert("Couldn't save protein", 'Unable to save this protein entry.');
+          return;
+        }
+        render();
+        dismiss();
+        if (afterLog) afterLog();
+      });
+
+      const body = el('div', { class: 'add-sheet' }, [
+        el('div', { class: 'add-title-block' }, [
+          el('div', { class: 'add-title', text: recipe.name }),
+          el('div', { class: 'add-date', text: fmt.sheetDate.format(date) })
+        ]),
+        el('div', { class: 'stepper' }, [
+          el('button', { class: 'round-button remove', 'aria-label': 'Fewer servings', html: icon('minus', 20), onclick: () => step(-0.5) }),
+          el('div', { class: 'amount-block' }, [servingsInput, el('div', { class: 'grams-label', text: 'servings' })]),
+          el('button', { class: 'round-button add', 'aria-label': 'More servings', html: icon('plus', 20), onclick: () => step(0.5) })
+        ]),
+        gramsInput ? el('div', { class: 'inline-form centered' }, [el('span', { class: 'unit-label', text: 'or' }), gramsInput, el('span', { class: 'unit-label', text: 'g eaten' })]) : null,
+        stats,
+        confirm,
+        a.issues ? el('div', { class: 'footnote', text: `${a.issues} ${a.issues === 1 ? 'ingredient isn’t' : 'ingredients aren’t'} counted in this recipe yet.` }) : null,
+        el('div', { class: 'footnote', text: `One serving: ${formatGrams(per.protein)}g protein · ${formatKcal(per.kcal)} kcal` })
+      ]);
+      show();
+      return {
+        navBar: navBar('Log Recipe', el('button', { class: 'nav-button', text: 'Cancel', onclick: dismiss })),
+        body: body
+      };
+    });
+  }
+
   // ---------- Backup & restore (web only) ----------
 
   const BACKUP_FORMAT = 'protein-tracker-backup';
@@ -842,7 +1395,8 @@
       version: 1,
       exportedAt: new Date().toISOString(),
       accentColor: currentAccent(),
-      entries: store.entries
+      entries: store.entries,
+      recipes: recipes.list
     };
     const json = JSON.stringify(backup, null, 2);
     const filename = `protein-tracker-backup-${dayKey(new Date())}.json`;
@@ -898,22 +1452,33 @@
     const entries = rawEntries.map(sanitizeEntry).filter(Boolean);
     if (rawEntries.length > 0 && entries.length === 0) return null;
     const accent = data && !Array.isArray(data) && ACCENTS[data.accentColor] ? data.accentColor : null;
-    return { entries: entries, skipped: rawEntries.length - entries.length, accentColor: accent };
+    const backupRecipes = data && !Array.isArray(data) && Array.isArray(data.recipes) ? data.recipes.map(sanitizeRecipe).filter(Boolean) : [];
+    return { entries: entries, recipes: backupRecipes, skipped: rawEntries.length - entries.length, accentColor: accent };
   }
 
   function applyImport(backup, replace, done) {
     const previous = store.entries;
+    const previousRecipes = recipes.list;
     let added = backup.entries.length;
+    let addedRecipes = backup.recipes.length;
     if (replace) {
       store.entries = backup.entries.slice();
+      recipes.list = backup.recipes.slice();
     } else {
       const known = new Set(previous.map((e) => e.id));
       const fresh = backup.entries.filter((e) => !known.has(e.id));
       added = fresh.length;
       store.entries = previous.concat(fresh);
+      const knownRecipes = new Set(previousRecipes.map((r) => r.id));
+      const freshRecipes = backup.recipes.filter((r) => !knownRecipes.has(r.id));
+      addedRecipes = freshRecipes.length;
+      recipes.list = previousRecipes.concat(freshRecipes);
     }
-    if (!store.save()) {
+    if (!store.save() || !recipes.save()) {
       store.entries = previous;
+      recipes.list = previousRecipes;
+      store.save();
+      recipes.save();
       showAlert("Couldn't import data", 'Unable to save the imported entries.');
       return;
     }
@@ -926,6 +1491,7 @@
     const noun = (n) => `${n} ${n === 1 ? 'entry' : 'entries'}`;
     let message = replace ? `Restored ${noun(added)}.` : `Added ${noun(added)}.`;
     if (!replace && added < backup.entries.length) message += ` ${noun(backup.entries.length - added)} already existed.`;
+    if (addedRecipes) message += ` ${replace ? 'Restored' : 'Added'} ${addedRecipes} ${addedRecipes === 1 ? 'recipe' : 'recipes'}.`;
     if (backup.skipped) message += ` Skipped ${noun(backup.skipped)} that couldn't be read.`;
     showAlert('Import complete', message);
   }
@@ -945,7 +1511,8 @@
           showAlert("Couldn't import data", "This file isn't a Protein Tracker backup.");
           return;
         }
-        const count = `${backup.entries.length} ${backup.entries.length === 1 ? 'entry' : 'entries'}`;
+        const count = `${backup.entries.length} ${backup.entries.length === 1 ? 'entry' : 'entries'}` +
+          (backup.recipes.length ? ` and ${backup.recipes.length} ${backup.recipes.length === 1 ? 'recipe' : 'recipes'}` : '');
         showAlert('Import backup?', `The backup has ${count}. Merge adds entries you don't already have. Replace erases everything on this device first.`, [
           { text: 'Merge', action: () => applyImport(backup, false, done) },
           { text: 'Replace All', style: 'destructive', action: () => applyImport(backup, true, done) },
@@ -971,7 +1538,7 @@
         ]),
         el('button', { class: 'add-protein-button', html: icon('backup', 20) + '<span>Export data</span>', onclick: exportBackup }),
         el('button', { class: 'add-protein-button', html: icon('plus', 18) + '<span>Import data</span>', onclick: () => importBackup(dismiss) }),
-        el('div', { class: 'footnote', text: `${count} ${count === 1 ? 'entry' : 'entries'} on this device` })
+        el('div', { class: 'footnote', text: `${count} ${count === 1 ? 'entry' : 'entries'} and ${recipes.list.length} ${recipes.list.length === 1 ? 'recipe' : 'recipes'} on this device` })
       ]);
       return {
         navBar: navBar('Backup', null, el('button', { class: 'nav-button bold', text: 'Done', onclick: dismiss })),
@@ -984,6 +1551,7 @@
 
   applyAccent(currentAccent());
   store.load();
+  recipes.load();
   render();
 
   // Keep "today" highlighting correct if the app is left open past midnight or resumed later.

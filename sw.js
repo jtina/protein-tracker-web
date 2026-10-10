@@ -1,10 +1,11 @@
 // Network-first service worker: always serves the latest version when online,
 // falls back to the cached copy so the app keeps working offline.
-const CACHE = 'protein-tracker-v7';
+const CACHE = 'protein-tracker-v8';
 const SHELL = [
   './',
   'index.html',
   'styles.css',
+  'nutrition.js',
   'app.js',
   'manifest.webmanifest',
   'assets/icon-192.png',
@@ -25,7 +26,8 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return;
+  // Only the app's own files; food searches and other sites go straight to the network.
+  if (event.request.method !== 'GET' || new URL(event.request.url).origin !== self.location.origin) return;
   event.respondWith(
     fetch(event.request)
       .then((response) => {
