@@ -17,7 +17,8 @@ It's plain HTML, CSS and JavaScript with no build step and no dependencies.
 - **Scan a package**: on the + screen, scan a barcode with the camera (or a photo, or type the number). Nutrition comes from [Open Food Facts](https://world.openfoodfacts.org); if a product isn't there, enter its label once and it's remembered for that barcode. Choose servings or grams and log it. Recently scanned packages appear as quick picks. You can also scan a package to set the nutrition of a recipe ingredient.
 - **Recipes**: paste a recipe, type ingredients one per line, or upload a recipe text file. The app reads amounts like `1 ½ cups`, `200g`, `2 large eggs` or `1 (15 oz) can`, matches each ingredient against a built-in table of about 170 common foods (typical USDA values), and shows protein and calories per serving and for the whole recipe. Add the cooked weight to see grams per serving and to log by weight. Tap any ingredient to correct it: pick another food, set its weight, search [Open Food Facts](https://world.openfoodfacts.org) for branded products, or type the numbers yourself. **Import from link**: paste a recipe website link (the ingredients, servings and any nutrition the site lists are read from the page's recipe data; on a page that lists recipes, pick one) or a TikTok link (its caption is fetched through TikTok's public embed endpoint, then hashtags and emojis are stripped). If a link doesn't work, paste the recipe or caption text instead. Log servings of a recipe from the Recipes list, or pick a recipe in the Add protein screen.
 - **Tags and search**: give recipes tags (type and press Enter or a comma; existing tags are suggested), then search recipes by name or tag, or tap tags to filter, in the Recipes list and on the + screen.
-- **Cloud sync (Supabase)**: sign in with an emailed code to save your log and recipes to your own Supabase project and keep every device in sync. See *Cloud sync setup* below.
+- **Cloud sync (Supabase)**: sync your log and recipes across devices with a PIN (sign in with an email link once to set it, or reuse the travel log app's PIN). See *Cloud sync setup* below.
+- **Light mode**: the palette button → Appearance: Dark, Light, or System (follows the phone).
 - **Backup** (arrows button in the header): export all entries and recipes to a JSON file, or import one, either merging it in or replacing everything
 - Installable as a home-screen web app with an offline cache
 
@@ -58,18 +59,19 @@ Without the helper, website import shows a message and you can paste the recipe 
 
 ## Cloud sync setup (Supabase)
 
-Sync saves your log and recipes to your own Supabase project. The app still works offline: changes are kept on the device and uploaded when you're back online. If the same entry is changed on two devices, the newest change wins. Deletions sync too.
+Sync saves your log and recipes to your own Supabase project, and works like the travel log app: sign in once with an email link, set a PIN, then every other device (including the iPhone home-screen app) just enters the PIN. The app still works offline: changes are kept on the device and uploaded when you're back online. If the same entry is changed on two devices, the newest change wins. Deletions sync too.
 
-1. In [Supabase](https://supabase.com), open your project (an existing one is fine: the app uses its own `pt_` tables).
-2. **SQL Editor → New query**: paste `supabase/schema.sql` and **Run**. It creates the `pt_entries` and `pt_recipes` tables with row-level security, so each account only sees its own data. It's safe to run again.
-3. **Authentication → Emails → Magic Link** template: add the code, e.g. `<p>Your code: {{ .Token }}</p>`. The app signs in with this 6-digit code, because on iPhone an email link opens Safari instead of the home-screen app.
-4. **Authentication → URL Configuration**: add `https://jtina.github.io/protein-tracker-web/` to **Redirect URLs** (used if you tap the link in the email instead).
-5. **Project Settings → API**: copy the **Project URL** and the **anon public** key.
-6. In the app: **⇅ (Backup & Sync) → Cloud sync**, paste both, tap **Connect**, enter your email, then the code from the email.
+1. In [Supabase](https://supabase.com), open your project. Using the same project as the travel log app is recommended: the app has its own `pt_` tables, and **the PIN you set there also works here**.
+2. **SQL Editor → New query**: paste `supabase/schema.sql` and **Run**. It creates the tables (with row-level security) and the PIN functions. It's safe to run again.
+3. **Authentication → URL Configuration**: add `https://jtina.github.io/protein-tracker-web/` under **Redirect URLs**, so the sign-in link comes back to this app.
+4. **Project Settings → Data API**: copy the **Project URL** and the **anon public** key.
+5. In the app: **⇅ (Backup & Sync) → Cloud sync**, paste both and tap **Connect**. Then:
+   - **Already have a PIN** (from the travel app): enter it and tap **Sync**. Done.
+   - **No PIN yet**: tap *Sign in with email*, tap the link in the email (it opens the app in your browser, signed in), set a PIN there, then enter that PIN in the home-screen app and on your other devices.
 
-To skip step 6's URL and key on every device, put them in `SUPABASE_URL` and `SUPABASE_ANON_KEY` at the top of the cloud sync section in `app.js`. The anon key is designed to be public; the row-level security policies are what keep the data private.
+To skip pasting the URL and key on every device, put them in `SUPABASE_URL` and `SUPABASE_ANON_KEY` at the top of the cloud sync section in `app.js`. The anon key is designed to be public; row-level security and the PIN functions keep the data private.
 
-The first time a device signs in, everything already on it is uploaded and merged with the account. Signing out keeps the data on the device.
+How the PIN works: a device that enters the right PIN gets its own long random key (stored hashed on the server) and syncs through functions that only touch your rows. Wrong PINs are rate limited (20 per 15 minutes). Changing the PIN locks out every device that used the old one; **Lock this device** forgets the key on one device. The first time a device connects, everything already on it is uploaded and merged with your account. Signing out or locking keeps the data on the device.
 
 ## Third-party code
 

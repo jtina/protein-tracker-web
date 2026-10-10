@@ -37,6 +37,30 @@
     root.setProperty('--remove-rgb', option.dark.join(', '));
   }
 
+  // ---------- Appearance (dark, light, or follow the device) ----------
+
+  const APPEARANCE_KEY = 'appearance';
+  const darkQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  function currentAppearance() {
+    const v = storageGet(APPEARANCE_KEY);
+    return v === 'light' || v === 'system' ? v : 'dark';
+  }
+  function applyAppearance() {
+    const pref = currentAppearance();
+    const dark = pref === 'dark' || (pref === 'system' && (!darkQuery || darkQuery.matches));
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    const tc = document.querySelector('meta[name="theme-color"]');
+    if (tc) tc.setAttribute('content', dark ? '#000000' : '#f2f2f7');
+    const cs = document.querySelector('meta[name="color-scheme"]');
+    if (cs) cs.setAttribute('content', dark ? 'dark' : 'light');
+    const sb = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+    if (sb) sb.setAttribute('content', dark ? 'black-translucent' : 'default');
+  }
+  if (darkQuery) {
+    const onChange = () => { if (currentAppearance() === 'system') applyAppearance(); };
+    if (darkQuery.addEventListener) darkQuery.addEventListener('change', onChange); else if (darkQuery.addListener) darkQuery.addListener(onChange);
+  }
+
   function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
   // ---------- Dates ----------
@@ -419,6 +443,7 @@
         el('button', {
           class: 'palette-button',
           'aria-label': 'Customize accent color',
+        title: 'Colors and light or dark mode',
           html: icon('palette', 22),
           onclick: openAccentPicker
         })
@@ -1093,9 +1118,30 @@
         }, [swatch, el('span', { class: 'accent-name', text: capitalize(name) })]));
       });
 
+      const seg = el('div', { class: 'segmented', role: 'radiogroup', 'aria-label': 'Appearance' });
+      const drawSeg = () => {
+        const now = currentAppearance();
+        seg.replaceChildren(...[['dark', 'Dark'], ['light', 'Light'], ['system', 'System']].map(([v, label]) => el('button', {
+          class: 'segment' + (now === v ? ' on' : ''),
+          role: 'radio',
+          'aria-checked': now === v ? 'true' : 'false',
+          text: label,
+          onclick: () => { storageSet(APPEARANCE_KEY, v); applyAppearance(); drawSeg(); }
+        })));
+      };
+      drawSeg();
+
       return {
-        navBar: navBar('Accent Color', null, el('button', { class: 'nav-button bold', text: 'Done', onclick: dismiss })),
-        body: el('div', { class: 'accent-sheet' }, [el('div', { class: 'accent-heading', text: 'Choose an accent color' }), grid])
+        navBar: navBar('Colors', null, el('button', { class: 'nav-button bold', text: 'Done', onclick: dismiss })),
+        body: el('div', { class: 'accent-sheet' }, [
+          el('div', { class: 'appearance' }, [
+            el('div', { class: 'accent-heading', text: 'Appearance' }),
+            seg,
+            el('div', { class: 'field-hint', text: 'System follows your phone’s light or dark setting.' })
+          ]),
+          el('div', { class: 'accent-heading', text: 'Choose an accent color' }),
+          grid
+        ])
       };
     });
   }
@@ -2478,19 +2524,27 @@
   // ---------- Cloud sync (Supabase) ----------
   // Optional. Fill these in to connect every copy of the app to your Supabase project, or enter
   // them in Backup & Sync on each device. The anon key is meant to be public; row-level
-  // security (supabase/schema.sql) keeps each account's data private.
+  // security and the functions in supabase/schema.sql keep each account's data private.
+  //
+  // Two ways a device syncs (like the travel log app):
+  //  - signed in with an emailed link (a Supabase session), or
+  //  - with your PIN: the device trades it for its own random key and syncs through
+  //    server functions that only touch that account's rows.
   const SUPABASE_URL = '';
   const SUPABASE_ANON_KEY = '';
   const SUPABASE_JS = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
   const SYNC_KEY = 'proteinTracker.sync';
+  const DEVICE_KEY = 'proteinTracker.device';
   const PAGE = 1000;
 
   const cloud = (function () {
     let meta = readMeta();
     let client = null;
     let user = null;
+    let device = readDevice();
     let status = 'off'; // off, connecting, signedout, syncing, synced, error
     let message = '';
+    let hasPin = null;
     let running = null;
     let again = false;
     let timer = null;
@@ -2509,9 +2563,22 @@
       });
       return m;
     }
+    function readDevice() {
+      try {
+        const d = JSON.parse(storageGet(DEVICE_KEY) || 'null');
+        return d && d.token && d.owner ? d : null;
+      } catch (_) { return null; }
+    }
+    function saveDevice(d) {
+      device = d;
+      if (d) storageSet(DEVICE_KEY, JSON.stringify(d));
+      else { try { localStorage.removeItem(DEVICE_KEY); } catch (_) { /* ignore */ } }
+    }
     function saveMeta() { storageSet(SYNC_KEY, JSON.stringify(meta)); }
     function emit() { listeners.forEach((fn) => { try { fn(); } catch (_) { /* ignore */ } }); }
     function setStatus(s, msg) { status = s; message = msg || ''; emit(); }
+    const accountId = () => (user ? user.id : device ? device.owner : null);
+    const mode = () => (user ? 'session' : device ? 'pin' : null);
 
     function config() {
       if (SUPABASE_URL && SUPABASE_ANON_KEY) return { url: SUPABASE_URL, key: SUPABASE_ANON_KEY, builtIn: true };
@@ -2540,21 +2607,30 @@
           const next = session && session.user ? session.user : null;
           const changed = (next && next.id) !== (user && user.id);
           user = next;
-          if (!user) { setStatus('signedout'); return; }
-          if (changed) linkAccount();
+          if (!changed) return;
+          hasPin = null;
+          if (accountId()) { linkAccount(); checkPin(); } else setStatus('signedout');
         });
         return client.auth.getSession();
       }).then((res) => {
         const session = res && res.data && res.data.session;
         user = session && session.user ? session.user : null;
-        if (user) linkAccount(); else setStatus('signedout');
+        if (accountId()) { linkAccount(); checkPin(); } else setStatus('signedout');
       }).catch((err) => setStatus('error', (err && err.message) || 'Couldn’t connect.'));
+    }
+
+    function checkPin() {
+      if (!user) return;
+      client.rpc('pt_has_pin').then(({ data, error }) => {
+        if (!error) { hasPin = !!data; emit(); }
+      });
     }
 
     // A new account on this device: upload everything it has, then download the account's data.
     function linkAccount() {
-      if (meta.userId !== user.id) {
-        meta.userId = user.id;
+      const id = accountId();
+      if (meta.userId !== id) {
+        meta.userId = id;
         meta.lastPull = {};
         markAll(true);
       }
@@ -2582,34 +2658,55 @@
       if (!quiet) schedule();
     }
     function schedule() {
-      if (!client || !user) return;
+      if (!client || !accountId()) return;
       clearTimeout(timer);
       timer = setTimeout(syncNow, 1200);
     }
 
+    // ---- transport: direct table access when signed in, PIN functions otherwise ----
+    const TABLES = { entries: 'pt_entries', recipes: 'pt_recipes' };
+    function lockedOut(error) {
+      return error && /PT_DEVICE_LOCKED/.test(error.message || '');
+    }
+    async function upsert(kind, rows) {
+      const { error } = mode() === 'session'
+        ? await client.from(TABLES[kind]).upsert(rows, { onConflict: 'id' })
+        : await client.rpc('pt_pin_put', { p_token: device.token, p_tbl: kind, p_rows: rows });
+      if (error) throw error;
+    }
+    async function fetchPage(kind, since, from) {
+      if (mode() === 'session') {
+        let q = client.from(TABLES[kind]).select('*').order('synced_at', { ascending: true }).range(from, from + PAGE - 1);
+        if (since) q = q.gt('synced_at', since);
+        const { data, error } = await q;
+        if (error) throw error;
+        return data || [];
+      }
+      const { data, error } = await client.rpc('pt_pin_pull', { p_token: device.token, p_tbl: kind, p_since: since, p_limit: PAGE, p_offset: from });
+      if (error) throw error;
+      return Array.isArray(data) ? data : [];
+    }
+
     function entryRow(id) {
       const e = store.entries.find((x) => x.id === id);
-      if (e) return { id: id, user_id: user.id, logged_at: e.timestamp, day: e.date, amount: e.amount, is_addition: e.isAddition, name: e.name, deleted: false, updated_at: e.updatedAt || e.timestamp };
-      if (meta.gone.entries[id]) return { id: id, user_id: user.id, deleted: true, updated_at: meta.gone.entries[id] };
+      if (e) return { id: id, user_id: accountId(), logged_at: e.timestamp, day: e.date, amount: e.amount, is_addition: e.isAddition, name: e.name, deleted: false, updated_at: e.updatedAt || e.timestamp };
+      if (meta.gone.entries[id]) return { id: id, user_id: accountId(), deleted: true, updated_at: meta.gone.entries[id] };
       return null;
     }
     function recipeRow(id) {
       const r = recipes.list.find((x) => x.id === id);
-      if (r) return { id: id, user_id: user.id, data: r, deleted: false, updated_at: r.updatedAt };
-      if (meta.gone.recipes[id]) return { id: id, user_id: user.id, deleted: true, updated_at: meta.gone.recipes[id] };
+      if (r) return { id: id, user_id: accountId(), data: r, deleted: false, updated_at: r.updatedAt };
+      if (meta.gone.recipes[id]) return { id: id, user_id: accountId(), deleted: true, updated_at: meta.gone.recipes[id] };
       return null;
     }
 
-    async function push(kind, table, toRow) {
+    async function push(kind, toRow) {
       const snapshot = Object.assign({}, meta.pending[kind]);
       const ids = Object.keys(snapshot);
       for (let i = 0; i < ids.length; i += 500) {
         const batch = ids.slice(i, i + 500);
         const rows = batch.map(toRow).filter(Boolean);
-        if (rows.length) {
-          const { error } = await client.from(table).upsert(rows, { onConflict: 'id' });
-          if (error) throw new Error(error.message || 'Upload failed');
-        }
+        if (rows.length) await upsert(kind, rows);
         batch.forEach((id) => {
           if (meta.pending[kind][id] === snapshot[id]) {
             delete meta.pending[kind][id];
@@ -2620,21 +2717,18 @@
       }
     }
 
-    async function pull(kind, table, apply) {
+    async function pull(kind, apply) {
       // A few seconds of overlap so rows saved at the same moment aren't missed; applying twice is harmless.
       const since = meta.lastPull[kind] ? new Date(Date.parse(meta.lastPull[kind]) - 5000).toISOString() : null;
       let newest = meta.lastPull[kind] || null;
       let changedAny = false;
       for (let from = 0; ; from += PAGE) {
-        let q = client.from(table).select('*').order('synced_at', { ascending: true }).range(from, from + PAGE - 1);
-        if (since) q = q.gt('synced_at', since);
-        const { data, error } = await q;
-        if (error) throw new Error(error.message || 'Download failed');
-        (data || []).forEach((row) => {
+        const data = await fetchPage(kind, since, from);
+        data.forEach((row) => {
           if (apply(row)) changedAny = true;
           if (!newest || row.synced_at > newest) newest = row.synced_at;
         });
-        if (!data || data.length < PAGE) break;
+        if (data.length < PAGE) break;
       }
       meta.lastPull[kind] = newest;
       saveMeta();
@@ -2683,14 +2777,14 @@
     }
 
     function syncNow() {
-      if (!client || !user) return Promise.resolve();
+      if (!client || !accountId()) return Promise.resolve();
       if (running) { again = true; return running; }
       setStatus('syncing');
       running = (async () => {
-        await push('entries', 'pt_entries', entryRow);
-        await push('recipes', 'pt_recipes', recipeRow);
-        const a = await pull('entries', 'pt_entries', applyEntry);
-        const b = await pull('recipes', 'pt_recipes', applyRecipe);
+        await push('entries', entryRow);
+        await push('recipes', recipeRow);
+        const a = await pull('entries', applyEntry);
+        const b = await pull('recipes', applyRecipe);
         if (a) store.save();
         if (b) recipes.save();
         if (a || b) render();
@@ -2698,14 +2792,27 @@
         saveMeta();
         setStatus('synced');
       })().catch((err) => {
+        if (mode() === 'pin' && lockedOut(err)) {
+          saveDevice(null);
+          setStatus('signedout', 'This device was locked because the PIN changed. Enter the new PIN to sync again.');
+          return;
+        }
         const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
-        setStatus('error', offline ? 'You’re offline. Changes will sync when you’re back online.' : (err && err.message) || 'Sync failed.');
+        const missing = /pt_pin_|pt_entries|pt_recipes|schema cache|does not exist/i.test((err && err.message) || '');
+        setStatus('error', offline ? 'You’re offline. Changes will sync when you’re back online.'
+          : missing ? 'Sync isn’t set up in Supabase yet: run supabase/schema.sql in the SQL Editor.'
+          : (err && err.message) || 'Sync failed.');
       }).finally(() => {
         running = null;
         if (again) { again = false; syncNow(); }
       });
       return running;
     }
+
+    const rpcError = (error) => {
+      const msg = (error && error.message) || 'Something went wrong.';
+      return new Error(/pt_[a-z_]+|schema cache|does not exist/i.test(msg) ? 'PIN sync isn’t set up in Supabase yet: run supabase/schema.sql in the SQL Editor.' : msg);
+    };
 
     return {
       start: start,
@@ -2716,8 +2823,10 @@
       config: config,
       get status() { return status; },
       get message() { return message; },
+      get mode() { return mode(); },
       get email() { return user && user.email; },
-      get signedIn() { return !!user; },
+      get connected() { return !!accountId(); },
+      get hasPin() { return hasPin; },
       get lastSynced() { return meta.lastSynced || null; },
       get pendingCount() { return Object.keys(meta.pending.entries).length + Object.keys(meta.pending.recipes).length; },
       subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
@@ -2732,26 +2841,50 @@
         return done.then(() => {
           client = null;
           user = null;
+          saveDevice(null);
           delete meta.url;
           delete meta.key;
           saveMeta();
           setStatus('off');
         });
       },
-      sendCode(email) {
+      /** Emails a sign-in link that comes back to this page. */
+      sendLink(email) {
         return client.auth.signInWithOtp({ email: email, options: { shouldCreateUser: true, emailRedirectTo: location.origin + location.pathname } })
           .then(({ error }) => { if (error) throw new Error(error.message); });
       },
-      verifyCode(email, code) {
-        return client.auth.verifyOtp({ email: email, token: code, type: 'email' })
-          .then(({ data, error }) => {
-            if (error) throw new Error(error.message);
-            if (data && data.user && (!user || user.id !== data.user.id)) { user = data.user; linkAccount(); }
-          });
+      /** Signed in: set or change the PIN. Changing it locks out devices that used the old one. */
+      setPin(pin) {
+        return client.rpc('pt_set_pin', { new_pin: pin }).then(({ error }) => {
+          if (error) throw rpcError(error);
+          hasPin = true;
+          emit();
+        });
+      },
+      /** Any device: trade the PIN for this device's own key. */
+      unlock(pin) {
+        return client.rpc('pt_unlock', { pin: pin }).then(({ data, error }) => {
+          if (error) throw rpcError(error);
+          if (!data || data.error || !data.token) throw new Error((data && data.error) || 'Wrong PIN');
+          saveDevice({ token: data.token, owner: data.owner });
+          linkAccount();
+        });
+      },
+      /** PIN device: forget this device's key (the data stays on the device). */
+      lock() {
+        const token = device && device.token;
+        saveDevice(null);
+        setStatus('signedout');
+        if (client && token) client.rpc('pt_forget', { token: token }).then(() => {}, () => {});
+        return Promise.resolve();
       },
       signOut() {
         if (!client) return Promise.resolve();
-        return client.auth.signOut().then(() => { user = null; setStatus('signedout'); });
+        return client.auth.signOut().then(() => {
+          user = null;
+          hasPin = null;
+          if (accountId()) emit(); else setStatus('signedout');
+        });
       }
     };
   })();
@@ -2768,20 +2901,22 @@
 
   function cloudSection() {
     const box = el('div', { class: 'cloud-card' });
-    let step = 'email'; // email → code
-    let email = '';
+    let linkSentTo = '';
+    let showEmail = false;
+    let editingPin = false;
 
     function draw() {
       const cfg = cloud.config();
       const kids = [el('div', { class: 'cloud-title', html: icon('cloud', 20) + '<span>Cloud sync</span>' })];
       const note = (t) => el('div', { class: 'backup-note', text: t });
+      const pinInput = (label, placeholder) => el('input', { class: 'search-input', type: 'password', autocomplete: 'off', autocapitalize: 'off', placeholder: placeholder, 'aria-label': label });
 
       if (!cfg) {
         const urlInput = el('input', { class: 'search-input', type: 'url', placeholder: 'https://your-project.supabase.co', autocomplete: 'off', autocapitalize: 'off', 'aria-label': 'Supabase project URL' });
         const keyInput = el('input', { class: 'search-input', type: 'text', placeholder: 'anon public key', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', 'aria-label': 'Supabase anon key' });
         const err = el('div', { class: 'field-hint' });
         kids.push(
-          note('Save your log and recipes to your Supabase database and keep every device in sync. Find these in Supabase under Project Settings → API.'),
+          note('Save your log and recipes to your Supabase database and keep every device in sync. Find these in Supabase under Project Settings → Data API.'),
           urlInput,
           keyInput,
           el('button', {
@@ -2799,36 +2934,43 @@
         );
       } else if (cloud.status === 'connecting') {
         kids.push(note('Connecting…'));
-      } else if (!cloud.signedIn) {
-        if (cloud.status === 'error') kids.push(el('div', { class: 'cloud-error', text: cloud.message }));
-        const err = el('div', { class: 'field-hint' });
-        if (step === 'email') {
+      } else if (!cloud.connected) {
+        if (cloud.message) kids.push(el('div', { class: 'cloud-error', text: cloud.message }));
+        // PIN first: the usual way on phones and the home-screen app.
+        const pin = pinInput('PIN', 'Your PIN');
+        const pinErr = el('div', { class: 'field-hint' });
+        const unlock = el('button', { class: 'pill-button', text: 'Sync' });
+        const tryUnlock = () => {
+          if (!pin.value) { pinErr.textContent = 'Enter your PIN.'; return; }
+          unlock.disabled = true;
+          pinErr.textContent = 'Checking…';
+          cloud.unlock(pin.value).catch((e) => { unlock.disabled = false; pinErr.textContent = e.message; });
+        };
+        unlock.addEventListener('click', tryUnlock);
+        pin.addEventListener('keydown', (e) => { if (e.key === 'Enter') tryUnlock(); });
+        kids.push(
+          el('div', { class: 'field-label', text: 'Enter PIN to sync' }),
+          el('div', { class: 'inline-form' }, [pin, unlock]),
+          pinErr
+        );
+
+        // First time: sign in with an emailed link (it opens in the browser), then set a PIN there.
+        if (linkSentTo) {
+          kids.push(note(`We emailed a sign-in link to ${linkSentTo}. Tap it: the app opens in your browser, signed in. Set a PIN there, then enter that PIN here and on your other devices.`));
+        } else if (!showEmail) {
+          kids.push(el('button', { class: 'text-button', html: '<span>No PIN yet? Sign in with email to set one</span>', onclick: () => { showEmail = true; draw(); } }));
+        } else {
           const emailInput = el('input', { class: 'search-input', type: 'email', inputmode: 'email', placeholder: 'you@example.com', autocomplete: 'email', autocapitalize: 'off', 'aria-label': 'Email' });
-          emailInput.value = email;
-          const send = el('button', { class: 'pill-button wide', text: 'Email me a sign-in code' });
+          const err = el('div', { class: 'field-hint' });
+          const send = el('button', { class: 'pill-button wide', text: 'Email me a sign-in link' });
           send.addEventListener('click', () => {
-            email = emailInput.value.trim();
+            const email = emailInput.value.trim();
             if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { err.textContent = 'Enter your email address.'; return; }
             send.disabled = true;
             err.textContent = 'Sending…';
-            cloud.sendCode(email).then(() => { step = 'code'; draw(); }).catch((e) => { send.disabled = false; err.textContent = e.message; });
+            cloud.sendLink(email).then(() => { linkSentTo = email; draw(); }).catch((e) => { send.disabled = false; err.textContent = e.message; });
           });
-          kids.push(note('Sign in to sync. Your entries on this device are uploaded and merged with your account.'), emailInput, send, err);
-        } else {
-          const codeInput = el('input', { class: 'search-input', type: 'text', inputmode: 'numeric', autocomplete: 'one-time-code', placeholder: '6-digit code', 'aria-label': 'Sign-in code' });
-          const verify = el('button', { class: 'pill-button wide', text: 'Sign in' });
-          verify.addEventListener('click', () => {
-            const code = codeInput.value.replace(/\s+/g, '');
-            if (!/^\d{6,10}$/.test(code)) { err.textContent = 'Enter the code from the email.'; return; }
-            verify.disabled = true;
-            err.textContent = 'Checking…';
-            cloud.verifyCode(email, code).then(() => { step = 'email'; draw(); }).catch((e) => { verify.disabled = false; err.textContent = e.message; });
-          });
-          kids.push(
-            note(`We sent a code to ${email}. Enter it here. (If the email only has a link, add the code to the Magic Link email template in Supabase; see the README.)`),
-            codeInput, verify, err,
-            el('button', { class: 'text-button', html: '<span>Use a different email</span>', onclick: () => { step = 'email'; draw(); } })
-          );
+          kids.push(el('div', { class: 'field-label', text: 'Sign in with email' }), emailInput, send, err);
         }
         if (!cfg.builtIn) kids.push(el('button', { class: 'text-button muted', html: '<span>Disconnect this project</span>', onclick: () => cloud.disconnect() }));
       } else {
@@ -2837,13 +2979,36 @@
           : cloud.pendingCount ? `${cloud.pendingCount} ${cloud.pendingCount === 1 ? 'change' : 'changes'} waiting to sync`
           : cloud.lastSynced ? `Synced ${relativeTime(cloud.lastSynced)}` : 'Synced';
         kids.push(
-          el('div', { class: 'cloud-account', text: `Signed in as ${cloud.email || 'your account'}` }),
-          el('div', { class: cloud.status === 'error' ? 'cloud-error' : 'backup-note', text: state }),
-          el('div', { class: 'cloud-actions' }, [
-            el('button', { class: 'pill-button', text: 'Sync now', onclick: () => cloud.syncNow() }),
-            el('button', { class: 'text-button muted', html: '<span>Sign out</span>', onclick: () => cloud.signOut() })
-          ])
+          el('div', { class: 'cloud-account', text: cloud.mode === 'session' ? `Signed in as ${cloud.email || 'your account'}` : 'Syncing with your PIN' }),
+          el('div', { class: cloud.status === 'error' ? 'cloud-error' : 'backup-note', text: state })
         );
+        if (cloud.mode === 'session') {
+          if (cloud.hasPin === false || editingPin) {
+            const pin = pinInput('New PIN', 'New PIN (6+ characters)');
+            const again = pinInput('Repeat PIN', 'Repeat PIN');
+            const err = el('div', { class: 'field-hint', text: cloud.hasPin ? 'Changing the PIN locks out devices that used the old one.' : 'Set a PIN so your other devices (and the home-screen app) can sync without signing in.' });
+            const save = el('button', { class: 'pill-button wide', text: cloud.hasPin ? 'Change PIN' : 'Set PIN' });
+            save.addEventListener('click', () => {
+              if (pin.value.length < 6) { err.textContent = 'Use at least 6 characters.'; return; }
+              if (pin.value !== again.value) { err.textContent = 'The PINs don’t match.'; return; }
+              save.disabled = true;
+              err.textContent = 'Saving…';
+              cloud.setPin(pin.value).then(() => { editingPin = false; draw(); }).catch((e) => { save.disabled = false; err.textContent = e.message; });
+            });
+            kids.push(el('div', { class: 'field-label', text: cloud.hasPin ? 'Change PIN' : 'Set a PIN' }), pin, again, save, err);
+          } else if (cloud.hasPin) {
+            kids.push(el('div', { class: 'cloud-pin-row' }, [
+              el('span', { class: 'backup-note', text: 'PIN is set. Enter it on other devices to sync.' }),
+              el('button', { class: 'text-button', html: '<span>Change</span>', onclick: () => { editingPin = true; draw(); } })
+            ]));
+          }
+        }
+        kids.push(el('div', { class: 'cloud-actions' }, [
+          el('button', { class: 'pill-button', text: 'Sync now', onclick: () => cloud.syncNow() }),
+          cloud.mode === 'session'
+            ? el('button', { class: 'text-button muted', html: '<span>Sign out</span>', onclick: () => cloud.signOut() })
+            : el('button', { class: 'text-button muted', html: '<span>Lock this device</span>', onclick: () => cloud.lock() })
+        ]));
       }
       box.replaceChildren(...kids);
     }
@@ -2855,6 +3020,7 @@
 
   // ---------- Boot ----------
 
+  applyAppearance();
   applyAccent(currentAccent());
   store.load();
   recipes.load();
