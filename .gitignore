@@ -1,0 +1,5 @@
+# Test output that should never be committed
+/*.png
+/*.jpg
+/*.json
+node_modules/
