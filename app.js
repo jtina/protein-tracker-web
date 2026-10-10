@@ -2355,7 +2355,7 @@
   // ---------- Backup & restore (web only) ----------
 
   const BACKUP_FORMAT = 'protein-tracker-backup';
-  const APP_VERSION = '19';
+  const APP_VERSION = '20';
 
   function exportBackup() {
     const backup = {
@@ -2847,7 +2847,7 @@
 
     // Back online or back in the app: connect if an earlier attempt failed (e.g. opened offline), then sync.
     function wake() {
-      if (!client && started && status !== 'connecting') { started = false; startIfUsed(); return; }
+      if (!client && status !== 'connecting') { started = false; startIfUsed(); return; }
       syncNow();
     }
 
