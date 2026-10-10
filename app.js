@@ -209,6 +209,7 @@
       weight: Number.isFinite(weight) && weight > 0 ? weight : null,
       text: raw.text,
       overrides: overrides,
+      useStated: raw.useStated === true,
       source: typeof raw.source === 'string' && /^https:\/\//.test(raw.source) ? raw.source.slice(0, 500) : null,
       stated: raw.stated && typeof raw.stated === 'object' && (Number(raw.stated.protein) > 0 || Number(raw.stated.kcal) > 0)
         ? { protein: Number(raw.stated.protein) > 0 ? Number(raw.stated.protein) : null, kcal: Number(raw.stated.kcal) > 0 ? Number(raw.stated.kcal) : null }
@@ -261,6 +262,22 @@
 
   function formatKcal(value) {
     return fmt.grams.format(Math.round(value));
+  }
+
+  /** Analysis with the per-serving numbers in use: the app's estimate, or the source's if chosen. */
+  function recipeNumbers(recipe) {
+    const a = N.analyzeRecipe(recipe);
+    a.estimate = a.perServing;
+    const st = recipe.stated;
+    a.usingStated = !!(recipe.useStated && st && (st.protein || st.kcal));
+    if (a.usingStated) {
+      a.perServing = {
+        protein: st.protein || a.estimate.protein,
+        kcal: st.kcal || a.estimate.kcal,
+        grams: a.estimate.grams
+      };
+    }
+    return a;
   }
 
   // ---------- Icons (SF Symbols look-alikes) ----------
@@ -831,7 +848,7 @@
         isAdd && recipes.list.length ? el('div', {}, [
           el('div', { class: 'field-label', text: 'From a recipe (1 serving)' }),
           el('div', { class: 'recipe-chips' }, recipes.sorted().map((r) => {
-            const per = N.analyzeRecipe(r).perServing;
+            const per = recipeNumbers(r).perServing;
             return el('button', {
               class: 'recipe-chip',
               text: `${r.name} · ${formatGrams(per.protein)}g`,
@@ -963,12 +980,12 @@
         return;
       }
       list.replaceChildren(...all.map((r) => {
-        const a = N.analyzeRecipe(r);
+        const a = recipeNumbers(r);
         const per = a.perServing;
         return el('div', { class: 'recipe-row' }, [
           el('button', { class: 'recipe-row-main', 'aria-label': `Open ${r.name}`, onclick: () => openRecipeEditor(r, renderList) }, [
             el('div', { class: 'recipe-row-name', text: r.name }),
-            el('div', { class: 'recipe-row-sub', text: `${formatGrams(per.protein)}g protein · ${formatKcal(per.kcal)} kcal per serving` + (a.issues ? ` · ${a.issues} to fix` : '') })
+            el('div', { class: 'recipe-row-sub', text: `${formatGrams(per.protein)}g protein · ${formatKcal(per.kcal)} kcal per serving` + (a.usingStated ? ' (from the source)' : a.issues ? ` · ${a.issues} to fix` : '') })
           ]),
           el('button', {
             class: 'recipe-log-button',
@@ -1297,10 +1314,13 @@
       }
 
       function renderAnalysis() {
-        const a = N.analyzeRecipe(draft);
+        const a = recipeNumbers(draft);
         const per = a.perServing;
+        const est = a.estimate;
+        const fromWhere = draft.source && /tiktok\.com/i.test(draft.source) ? 'caption' : 'recipe';
+        const statedText = draft.stated ? [draft.stated.protein ? `${formatGrams(draft.stated.protein)}g protein` : '', draft.stated.kcal ? `${formatKcal(draft.stated.kcal)} kcal` : ''].filter(Boolean).join(' · ') : '';
         summary.replaceChildren(...[
-          el('div', { class: 'summary-label', text: 'Per serving' }),
+          el('div', { class: 'summary-label', text: a.usingStated ? `Per serving (from the ${fromWhere})` : 'Per serving (estimated)' }),
           el('div', { class: 'summary-numbers' }, [
             el('div', { class: 'summary-stat' }, [
               el('span', { class: 'summary-big', text: formatGrams(per.protein) }),
@@ -1311,13 +1331,20 @@
               el('span', { class: 'summary-unit', text: 'kcal' })
             ])
           ]),
-          el('div', { class: 'summary-sub', text:
+          el('div', { class: 'summary-sub', text: (a.usingStated ? `Estimate from the ingredients: ${formatGrams(est.protein)}g protein · ${formatKcal(est.kcal)} kcal per serving. ` : '') +
             `Whole recipe: ${formatGrams(a.total.protein)}g protein · ${formatKcal(a.total.kcal)} kcal · ${fmt.editAmount.format(a.servings)} ${a.servings === 1 ? 'serving' : 'servings'}` +
             (per.grams ? ` · about ${formatGrams(per.grams)} g each` : '') }),
-          draft.stated ? el('div', { class: 'summary-sub stated', text:
-            (draft.source && /tiktok\.com/i.test(draft.source) ? 'The caption says ' : 'The recipe lists ') + [draft.stated.protein ? `${formatGrams(draft.stated.protein)}g protein` : '', draft.stated.kcal ? `${formatKcal(draft.stated.kcal)} kcal` : ''].filter(Boolean).join(' · ') +
-            '. Compare it with the estimate above; check the servings if they’re far apart.' }) : null,
-          a.issues ? el('div', { class: 'summary-warn', html: icon('warn', 15) + `<span>${a.issues} ${a.issues === 1 ? 'ingredient isn’t' : 'ingredients aren’t'} counted yet. Tap ${a.issues === 1 ? 'it' : 'them'} below to fix.</span>` }) : null
+          draft.stated ? el('div', { class: 'stated-row' }, [
+            el('div', { class: 'summary-sub stated', text: a.usingStated
+              ? `Using the ${fromWhere}’s numbers.`
+              : `The ${fromWhere} says ${statedText} per serving.` }),
+            el('button', {
+              class: 'stated-toggle',
+              text: a.usingStated ? 'Use estimate' : `Use the ${fromWhere}’s numbers`,
+              onclick: () => { draft.useStated = !a.usingStated; renderAnalysis(); }
+            })
+          ]) : null,
+          !a.usingStated && a.issues ? el('div', { class: 'summary-warn', html: icon('warn', 15) + `<span>${a.issues} ${a.issues === 1 ? 'ingredient isn’t' : 'ingredients aren’t'} counted yet. Tap ${a.issues === 1 ? 'it' : 'them'} below to fix.</span>` }) : null
         ].filter(Boolean));
 
         if (!a.items.length) {
@@ -1565,7 +1592,7 @@
 
   function openLogRecipe(recipe, afterLog) {
     const date = state.selectedDate;
-    const a = N.analyzeRecipe(recipe);
+    const a = recipeNumbers(recipe);
     const per = a.perServing;
 
     present('cover', (dismiss) => {
@@ -1621,7 +1648,7 @@
         gramsInput ? el('div', { class: 'inline-form centered' }, [el('span', { class: 'unit-label', text: 'or' }), gramsInput, el('span', { class: 'unit-label', text: 'g eaten' })]) : null,
         stats,
         confirm,
-        a.issues ? el('div', { class: 'footnote', text: `${a.issues} ${a.issues === 1 ? 'ingredient isn’t' : 'ingredients aren’t'} counted in this recipe yet.` }) : null,
+        !a.usingStated && a.issues ? el('div', { class: 'footnote', text: `${a.issues} ${a.issues === 1 ? 'ingredient isn’t' : 'ingredients aren’t'} counted in this recipe yet.` }) : null,
         el('div', { class: 'footnote', text: `One serving: ${formatGrams(per.protein)}g protein · ${formatKcal(per.kcal)} kcal` })
       ]);
       show();

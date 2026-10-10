@@ -639,3 +639,15 @@ svg.icon { display: block; flex-shrink: 0; }
 .summary-sub.stated { color: var(--label); opacity: 0.85; }
 .source-link { margin: -8px 0 0; text-decoration: none; }
 .recipe-list { margin-top: 2px; }
+
+.stated-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 2px; }
+.stated-row .summary-sub { flex: 1 1 160px; }
+.stated-toggle {
+  flex-shrink: 0;
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.18);
+}

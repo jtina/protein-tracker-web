@@ -16,6 +16,8 @@
     { id: 'ground-chicken', n: 'Ground chicken', k: ['ground chicken'], p: 17.4, c: 143, cup: 225 },
     { id: 'ground-turkey', n: 'Ground turkey', k: ['ground turkey', 'turkey mince'], p: 18.7, c: 150, cup: 225 },
     { id: 'turkey-breast', n: 'Turkey breast', k: ['turkey breast', 'turkey'], p: 23.7, c: 114, cup: 140 },
+    { id: 'turkey-bacon', n: 'Turkey bacon', k: ['turkey bacon'], p: 15, c: 220, each: 15 },
+    { id: 'chicken-sausage', n: 'Chicken sausage', k: ['chicken sausage', 'chicken sausages', 'turkey sausage'], p: 14, c: 170, each: 85 },
     { id: 'deli-turkey', n: 'Deli turkey', k: ['deli turkey', 'sliced turkey', 'turkey slices'], p: 17, c: 100, each: 28 },
     { id: 'ground-beef', n: 'Ground beef (80/20)', k: ['ground beef', 'minced beef', 'beef mince', 'hamburger'], p: 17.2, c: 254, cup: 225 },
     { id: 'lean-ground-beef', n: 'Lean ground beef (90/10)', k: ['lean ground beef', 'extra lean ground beef', '90% lean ground beef', '93% lean ground beef'], p: 20, c: 176, cup: 225 },
@@ -45,11 +47,13 @@
     { id: 'egg-yolk', n: 'Egg yolk', k: ['egg yolk', 'egg yolks'], p: 15.9, c: 322, each: 17, large: true },
     { id: 'milk', n: 'Milk (2%)', k: ['milk', '2% milk', 'reduced fat milk'], p: 3.3, c: 50, cup: 244 },
     { id: 'whole-milk', n: 'Whole milk', k: ['whole milk'], p: 3.2, c: 61, cup: 244 },
+    { id: 'protein-milk', n: 'Ultra-filtered milk (Fairlife)', k: ['fairlife', 'fairlife milk', 'ultra filtered milk', 'ultrafiltered milk', 'protein milk'], p: 5.4, c: 46, cup: 240 },
     { id: 'skim-milk', n: 'Skim milk', k: ['skim milk', 'nonfat milk', 'fat free milk'], p: 3.4, c: 34, cup: 245 },
     { id: 'greek-yogurt', n: 'Greek yogurt, plain', k: ['greek yogurt', 'greek yoghurt', 'skyr'], p: 10, c: 73, cup: 245 },
     { id: 'yogurt', n: 'Yogurt, plain', k: ['yogurt', 'yoghurt', 'plain yogurt'], p: 3.5, c: 61, cup: 245 },
     { id: 'cottage-cheese', n: 'Cottage cheese', k: ['cottage cheese'], p: 10.5, c: 81, cup: 226 },
     { id: 'cheddar', n: 'Cheddar cheese', k: ['cheddar', 'cheddar cheese', 'cheese', 'shredded cheese', 'mexican cheese', 'colby jack', 'monterey jack', 'swiss cheese'], p: 23.3, c: 409, cup: 113, each: 28 },
+    { id: 'light-cheese', n: 'Reduced-fat cheese', k: ['reduced fat cheese', 'low fat cheese', 'light cheese', 'lighter cheese', 'reduced fat cheddar', 'light mozzarella', 'low fat mozzarella', 'cheese slices light'], p: 27, c: 280, cup: 113, each: 21 },
     { id: 'mozzarella', n: 'Mozzarella (part skim)', k: ['mozzarella', 'mozzarella cheese'], p: 24, c: 254, cup: 112, each: 28 },
     { id: 'parmesan', n: 'Parmesan', k: ['parmesan', 'parmesan cheese', 'parmigiano', 'pecorino'], p: 35.8, c: 392, cup: 100 },
     { id: 'feta', n: 'Feta', k: ['feta', 'feta cheese', 'goat cheese'], p: 14.2, c: 264, cup: 150 },
@@ -80,7 +84,7 @@
     { id: 'flax', n: 'Flaxseed', k: ['flaxseed', 'flax seed', 'flax seeds', 'ground flaxseed', 'flax meal', 'flax'], p: 18.3, c: 534, cup: 112 },
     { id: 'pumpkin-seeds', n: 'Pumpkin seeds', k: ['pumpkin seeds', 'pepitas'], p: 30, c: 559, cup: 129 },
     { id: 'sunflower-seeds', n: 'Sunflower seeds', k: ['sunflower seeds'], p: 20.8, c: 584, cup: 140 },
-    { id: 'sesame-seeds', n: 'Sesame seeds', k: ['sesame seeds', 'sesame seed'], p: 17.7, c: 573, cup: 144 },
+    { id: 'sesame-seeds', n: 'Sesame seeds', k: ['sesame seeds', 'sesame seed'], p: 17.7, c: 573, cup: 144, each: 0.5 },
     // Grains, bread, pasta (dry unless cooked)
     { id: 'rice', n: 'Rice, dry', k: ['rice', 'white rice', 'jasmine rice', 'basmati rice', 'sushi rice', 'arborio rice'], p: 7.1, c: 365, cup: 185, cooked: 'rice-cooked' },
     { id: 'rice-cooked', n: 'Rice, cooked', k: ['cooked rice', 'cooked white rice', 'leftover rice', 'steamed rice'], p: 2.7, c: 130, cup: 158 },
@@ -89,8 +93,10 @@
     { id: 'quinoa', n: 'Quinoa, dry', k: ['quinoa'], p: 14.1, c: 368, cup: 170, cooked: 'quinoa-cooked' },
     { id: 'quinoa-cooked', n: 'Quinoa, cooked', k: ['cooked quinoa'], p: 4.4, c: 120, cup: 185 },
     { id: 'oats', n: 'Oats, dry', k: ['oats', 'rolled oats', 'oatmeal', 'old fashioned oats', 'quick oats', 'steel cut oats'], p: 13.2, c: 379, cup: 81 },
-    { id: 'pasta', n: 'Pasta, dry', k: ['pasta', 'spaghetti', 'penne', 'macaroni', 'fettuccine', 'linguine', 'rigatoni', 'fusilli', 'rotini', 'orzo', 'lasagna noodles', 'noodles', 'ramen noodles', 'udon', 'rice noodles', 'soba'], p: 13, c: 371, cup: 100, cooked: 'pasta-cooked' },
+    { id: 'pasta', n: 'Pasta, dry', k: ['pasta', 'spaghetti', 'penne', 'macaroni', 'fettuccine', 'linguine', 'rigatoni', 'fusilli', 'rotini', 'orzo', 'lasagna noodles', 'noodles', 'ramen noodles', 'udon', 'soba'], p: 13, c: 371, cup: 100, cooked: 'pasta-cooked' },
     { id: 'pasta-cooked', n: 'Pasta, cooked', k: ['cooked pasta', 'cooked spaghetti', 'cooked noodles'], p: 5.8, c: 158, cup: 140 },
+    { id: 'rice-noodles', n: 'Rice noodles, dry', k: ['rice noodles', 'rice noodle', 'rice vermicelli', 'vermicelli', 'pad thai noodles', 'flat rice noodles', 'wide rice noodles', 'pho noodles', 'glass noodles', 'cellophane noodles'], p: 6, c: 364, cup: 90, cooked: 'rice-noodles-cooked' },
+    { id: 'rice-noodles-cooked', n: 'Rice noodles, cooked', k: ['cooked rice noodles'], p: 1.8, c: 108, cup: 176 },
     { id: 'protein-pasta', n: 'Protein pasta, dry', k: ['protein pasta', 'chickpea pasta', 'lentil pasta', 'banza'], p: 22, c: 350, cup: 100 },
     { id: 'egg-noodles', n: 'Egg noodles, dry', k: ['egg noodles'], p: 14.2, c: 384, cup: 38 },
     { id: 'couscous', n: 'Couscous, dry', k: ['couscous'], p: 12.8, c: 376, cup: 173 },
@@ -106,7 +112,8 @@
     { id: 'breadcrumbs', n: 'Breadcrumbs', k: ['breadcrumbs', 'bread crumbs', 'panko'], p: 13.4, c: 395, cup: 108 },
     { id: 'granola', n: 'Granola', k: ['granola'], p: 10, c: 471, cup: 122 },
     // Vegetables
-    { id: 'broccoli', n: 'Broccoli', k: ['broccoli', 'broccoli florets'], p: 2.8, c: 34, cup: 91, each: 225 },
+    { id: 'broccoli', n: 'Broccoli', k: ['broccoli', 'broccoli florets', 'broccolini', 'tenderstem broccoli'], p: 2.8, c: 34, cup: 91, each: 225 },
+    { id: 'chinese-broccoli', n: 'Chinese broccoli (gai lan)', k: ['chinese broccoli', 'gai lan', 'kai lan', 'choy sum', 'yu choy'], p: 1.2, c: 22, cup: 88 },
     { id: 'spinach', n: 'Spinach', k: ['spinach', 'baby spinach'], p: 2.9, c: 23, cup: 30 },
     { id: 'kale', n: 'Kale', k: ['kale'], p: 2.9, c: 35, cup: 21 },
     { id: 'lettuce', n: 'Lettuce', k: ['lettuce', 'romaine', 'mixed greens', 'arugula', 'salad greens'], p: 1.2, c: 17, cup: 47 },
@@ -153,6 +160,13 @@
     // Oils, sauces, sweeteners, pantry
     { id: 'oil', n: 'Oil', k: ['oil', 'olive oil', 'extra virgin olive oil', 'vegetable oil', 'canola oil', 'coconut oil', 'avocado oil', 'sesame oil', 'cooking spray'], p: 0, c: 884, cup: 216 },
     { id: 'mayo', n: 'Mayonnaise', k: ['mayonnaise', 'mayo'], p: 1, c: 680, cup: 220 },
+    { id: 'light-mayo', n: 'Light mayonnaise', k: ['light mayo', 'light mayonnaise', 'lighter mayo', 'reduced fat mayo'], p: 0.9, c: 300, cup: 230 },
+    { id: 'oyster-sauce', n: 'Oyster sauce', k: ['oyster sauce', 'hoisin', 'hoisin sauce', 'stir fry sauce', 'teriyaki sauce', 'teriyaki'], p: 1.4, c: 80, cup: 288 },
+    { id: 'dark-soy', n: 'Dark soy sauce', k: ['dark soy sauce', 'dark soy', 'sweet soy sauce', 'kecap manis'], p: 5, c: 100, cup: 272 },
+    { id: 'chili-paste', n: 'Chili paste / sauce', k: ['gochujang', 'sweet chili sauce', 'sweet chilli sauce', 'chili garlic sauce', 'sambal oelek', 'chili crisp', 'chili oil', 'curry paste', 'red curry paste', 'green curry paste', 'miso', 'miso paste'], p: 3, c: 180, cup: 270 },
+    { id: 'rice-wine', n: 'Rice wine / mirin', k: ['mirin', 'shaoxing wine', 'rice wine', 'cooking wine', 'sake', 'white wine', 'red wine'], p: 0.2, c: 120, cup: 240 },
+    { id: 'sweetener', n: 'Zero-calorie sweetener', k: ['sweetener', 'stevia', 'truvia', 'erythritol', 'monk fruit', 'monk fruit sweetener', 'allulose', 'splenda', 'sucralose', 'sugar free syrup', 'sugar-free syrup', 'zero calorie sweetener'], p: 0, c: 0, cup: 200, each: 1 },
+    { id: 'sweetener-blend', n: 'Sweetener & sugar blend', k: ['truvia brown', 'brown truvia', 'brown sugar blend', 'truvia brown sugar blend', 'sugar blend', 'baking blend'], p: 0, c: 190, cup: 200 },
     { id: 'soy-sauce', n: 'Soy sauce', k: ['soy sauce', 'tamari', 'coconut aminos', 'fish sauce'], p: 8.1, c: 53, cup: 255 },
     { id: 'honey', n: 'Honey', k: ['honey', 'agave', 'agave nectar'], p: 0.3, c: 304, cup: 339 },
     { id: 'maple', n: 'Maple syrup', k: ['maple syrup', 'syrup'], p: 0, c: 260, cup: 315 },
@@ -174,7 +188,7 @@
     { id: 'cocoa', n: 'Cocoa powder', k: ['cocoa powder', 'cocoa', 'cacao powder'], p: 19.6, c: 228, cup: 86 },
     { id: 'cornstarch', n: 'Cornstarch', k: ['cornstarch', 'corn starch', 'cornflour', 'arrowroot'], p: 0.3, c: 381, cup: 128 },
     { id: 'vanilla', n: 'Vanilla extract', k: ['vanilla extract', 'vanilla'], p: 0, c: 288, cup: 208 },
-    { id: 'vinegar', n: 'Vinegar', k: ['vinegar', 'apple cider vinegar', 'rice vinegar', 'balsamic vinegar', 'red wine vinegar'], p: 0, c: 18, cup: 240 },
+    { id: 'vinegar', n: 'Vinegar', k: ['vinegar', 'apple cider vinegar', 'rice vinegar', 'rice wine vinegar', 'balsamic vinegar', 'red wine vinegar', 'white wine vinegar', 'white vinegar', 'sherry vinegar', 'malt vinegar', 'black vinegar'], p: 0, c: 18, cup: 240 },
     { id: 'spices', n: 'Spices', k: ['spices', 'cumin', 'paprika', 'smoked paprika', 'chili powder', 'chilli powder', 'cinnamon', 'oregano', 'thyme', 'turmeric', 'curry powder', 'garlic powder', 'onion powder', 'italian seasoning', 'cayenne', 'cayenne pepper', 'red pepper flakes', 'crushed red pepper', 'nutmeg', 'coriander', 'garam masala', 'taco seasoning', 'seasoning', 'bay leaves', 'bay leaf', 'black pepper', 'pepper', 'everything bagel seasoning', 'dried oregano', 'dried basil', 'dried thyme', 'ground ginger'], p: 10, c: 300, cup: 100, each: 0.2 },
     { id: 'salt', n: 'Salt', k: ['salt', 'kosher salt', 'sea salt', 'baking soda', 'baking powder'], p: 0, c: 0, cup: 290 },
     { id: 'water', n: 'Water', k: ['water', 'ice', 'ice cubes', 'cold water', 'warm water', 'hot water'], p: 0, c: 0, cup: 237 },
@@ -209,6 +223,8 @@
     [['quart', 'quarts', 'qt'], 'vol', CUP_ML * 4],
     [['pinch', 'pinches', 'dash', 'dashes'], 'vol', CUP_ML / 768],
     [['handful', 'handfuls'], 'mass', 30],
+    [['sprinkle', 'sprinkles'], 'vol', CUP_ML / 96],
+    [['splash', 'splashes', 'drizzle', 'drizzles', 'glug'], 'vol', CUP_ML / 48],
     [['can', 'cans', 'tin', 'tins'], 'can', 1],
     [['stick', 'sticks'], 'stick', 1],
     [['clove', 'cloves', 'slice', 'slices', 'piece', 'pieces', 'pc', 'pcs', 'whole', 'scoop', 'scoops', 'fillet', 'fillets', 'filet', 'filets', 'breast', 'breasts', 'thigh', 'thighs', 'stalk', 'stalks', 'sprig', 'sprigs', 'leaf', 'leaves', 'link', 'links', 'strip', 'strips', 'patty', 'patties', 'head', 'heads', 'ear', 'ears', 'bunch', 'bunches', 'package', 'packages', 'pkg', 'block', 'blocks', 'container', 'containers', 'bag', 'bags', 'jar', 'jars', 'box', 'boxes', 'serving', 'servings'], 'each', 1]
@@ -287,7 +303,9 @@
     out.optional = /\boptional\b/i.test(s);
     out.toTaste = /\b(to taste|as needed|for serving|for garnish|to garnish)\b/i.test(s);
 
-    const q = readQuantity(s);
+    let q = readQuantity(s);
+    // "pinch of salt", "splash of milk": one of that unit.
+    if (!q && /^(?:a\s+)?(pinch|dash|sprinkle|splash|drizzle|handful|glug)\b/i.test(s)) q = { qty: 1, rest: s.replace(/^(?:a\s+)/i, '') };
     let rest = s;
     if (q) {
       out.qty = q.qty;
@@ -387,7 +405,8 @@
     if (!food) return Object.assign(base, { status: 'unmatched', note: 'Not in the food list' });
 
     let chosen = food;
-    if (!ov.foodId && !ov.custom && food.cooked && /\bcooked\b/i.test(parsed.text)) chosen = FOOD_BY_ID[food.cooked] || food;
+    // "1 cup rice, cooked" means cooked rice; "50g dry rice noodles, cooked" was weighed dry.
+    if (!ov.foodId && !ov.custom && food.cooked && /\bcooked\b/i.test(parsed.text) && !/\b(dry|dried|uncooked|raw)\b/i.test(parsed.text)) chosen = FOOD_BY_ID[food.cooked] || food;
 
     let grams = ov.grams != null ? +ov.grams : null;
     let estimate = false;
@@ -431,7 +450,8 @@
     }
     // A count: "3 eggs", "2 cloves garlic", "1 large onion".
     if (food.each) {
-      const size = food.large && parsed.sizeWord === 'large' ? 1 : food.large ? parsed.size / 1.25 : parsed.size;
+      // Eggs are weighed as "large"; other foods as "medium".
+      const size = food.large ? (parsed.sizeWord ? parsed.size / 1.25 : 1) : parsed.size;
       return { grams: qty * food.each * size, estimate: !u && !food.large && parsed.size !== 1 };
     }
     return { grams: null, why: 'Add a unit (g, cup…)' };
@@ -527,10 +547,16 @@
     t = t.replace(/https?:\/\/\S+/g, ' ').replace(/(^|\s)[#@][\w.]+/gu, ' ');
 
     const stated = {};
-    const pm = t.match(/(\d+(?:\.\d+)?)\s*g(?:rams?)?\s*(?:of\s+)?protein\b/i) || t.match(/protein\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*g\b/i);
+    const pm = t.match(/(\d+(?:\.\d+)?)\s*g(?:rams?)?\s*(?:of\s+)?protein\b/i) ||
+      t.match(/\bprotein\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*g?\b/i) ||
+      // "52P | 51C | 8F", "52g P"
+      t.match(/(\d+(?:\.\d+)?)\s*g?\s*P\b(?=\s*(?:[|/,·•-]|\d|$|\n))/);
     if (pm) stated.protein = parseFloat(pm[1]);
-    const cm = t.match(/(\d{2,4})\s*(?:kcal|cals?|calories)\b/i) || t.match(/(?:calories|cals?|kcal)\s*[:\-]?\s*(\d{2,4})\b/i);
+    const cm = t.match(/(\d{2,4})\s*(?:kcals?|cals?|calories)\b/i) || t.match(/\b(?:calories|cals?|kcals?)\s*[:\-]?\s*(\d{2,4})\b/i);
     if (cm) stated.kcal = parseFloat(cm[1]);
+
+    // Headings run into the line before them when the line breaks are lost ("…sweetener REMAINING: 150g…").
+    t = t.replace(/\s+([A-Z][A-Za-z]*(?:\s+[A-Za-z]+)?(?:\s*\([^)]*\))?\s*:)(?=\s|$)/g, '\n$1\n');
 
     // Emojis and bullets often separate ingredients on one line: treat them as line breaks.
     t = t.replace(/[•·▪●◦‣]/g, '\n').replace(EMOJI, '\n');
@@ -547,12 +573,15 @@
       const p = parseLine(l);
       if (isHeading(l)) return false;
       if (/\b(protein|calories|cals?|kcal|macros?|carbs?|fat)\b\s*[:\-]?\s*\d/i.test(l) && !matchFood(p.food)) return false;
-      if (/^\s*\d+(?:\.\d+)?\s*(?:g|grams?)?\s*(?:of\s+)?(?:protein|carbs?|fats?|cals?|kcal|calories)\b/i.test(l)) return false;
+      if (/^\s*\d+(?:\.\d+)?\s*(?:g|grams?)?\s*(?:of\s+)?(?:protein|carbs?|fats?|cals?|kcals?|calories)\b/i.test(l)) return false;
+      if (/\d+\s*[PCF]\s*\|/.test(l) || /^\s*macros?\b/i.test(l)) return false;
       if (p.qty != null && (p.unit || matchFood(p.food))) return true;
       return !!matchFood(l) && l.length <= 40 && !/[!?]/.test(l) && l.split(' ').length <= 6;
     };
     const kept = ex.text.split('\n').filter((l) => l && l !== name && looksLikeIngredient(l));
-    return { name: (ex.name || name).replace(/[!.?\s]+$/, ''), servings: ex.servings, text: kept.join('\n'), stated: stated };
+    let finalName = (ex.name || name).replace(/[!.?:\s]+$/, '');
+    if (/^(recipe|ingredients?|serves|servings?|macros?)\b/i.test(finalName) || /\b(serves|servings?)\s*\d/i.test(finalName)) finalName = '';
+    return { name: finalName, servings: ex.servings, text: kept.join('\n'), stated: stated };
   }
 
   const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', frac12: '½', frac14: '¼', frac34: '¾', frac13: '⅓', frac23: '⅔', frac18: '⅛', deg: '°', ndash: '–', mdash: '—', rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“', hellip: '…', eacute: 'é', ntilde: 'ñ' };
