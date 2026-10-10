@@ -219,6 +219,16 @@
     return out;
   }
 
+  /** Nutrition facts per serving (from a caption, a recipe site, or typed in); null if none. */
+  function cleanStated(st) {
+    if (!st || typeof st !== 'object') return null;
+    const n = (v) => (v === '' || v == null || !Number.isFinite(+v) || +v < 0 ? null : +v);
+    const out = { protein: n(st.protein), kcal: n(st.kcal), carbs: n(st.carbs), fat: n(st.fat) };
+    if (out.protein == null && out.kcal == null) return null;
+    if (st.manual === true) out.manual = true;
+    return out;
+  }
+
   // Returns a clean recipe, or null if the record isn't a valid recipe.
   function sanitizeRecipe(raw) {
     if (!raw || typeof raw !== 'object' || typeof raw.id !== 'string' || !raw.id) return null;
@@ -253,9 +263,7 @@
       useStated: raw.useStated === true,
       tags: cleanTags(raw.tags),
       source: typeof raw.source === 'string' && /^https:\/\//.test(raw.source) ? raw.source.slice(0, 500) : null,
-      stated: raw.stated && typeof raw.stated === 'object' && (Number(raw.stated.protein) > 0 || Number(raw.stated.kcal) > 0)
-        ? { protein: Number(raw.stated.protein) > 0 ? Number(raw.stated.protein) : null, kcal: Number(raw.stated.kcal) > 0 ? Number(raw.stated.kcal) : null }
-        : null,
+      stated: cleanStated(raw.stated),
       updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date().toISOString()
     };
   }
@@ -338,16 +346,24 @@
     return scored.slice(0, limit || 8).map((x) => x.f);
   }
 
+  function recipeForEntry(entry) {
+    if (!entry || !entry.isAddition) return null;
+    const key = String(entry.name || '').trim().toLowerCase();
+    return recipes.list.find((r) => r.name.trim().toLowerCase() === key) || null;
+  }
+
   /** Analysis with the per-serving numbers in use: the app's estimate, or the source's if chosen. */
   function recipeNumbers(recipe) {
     const a = N.analyzeRecipe(recipe);
     a.estimate = a.perServing;
     const st = recipe.stated;
-    a.usingStated = !!(recipe.useStated && st && (st.protein || st.kcal));
+    a.usingStated = !!(recipe.useStated && st && (st.protein != null || st.kcal != null));
     if (a.usingStated) {
       a.perServing = {
-        protein: st.protein || a.estimate.protein,
-        kcal: st.kcal || a.estimate.kcal,
+        protein: st.protein != null ? st.protein : a.estimate.protein,
+        kcal: st.kcal != null ? st.kcal : a.estimate.kcal,
+        carbs: st.carbs,
+        fat: st.fat,
         grams: a.estimate.grams
       };
     }
@@ -1081,12 +1097,51 @@
       save.addEventListener('click', submit);
       refresh();
 
+      // Logged from a recipe: show it, and let the amount be set in servings.
+      const recipe = recipeForEntry(entry);
+      let recipeCard = null;
+      if (recipe) {
+        const a = recipeNumbers(recipe);
+        const per = a.perServing;
+        const servingsInput = per.protein > 0 ? el('input', { class: 'small-input servings-input', type: 'text', inputmode: 'decimal', autocomplete: 'off', 'aria-label': 'Servings' }) : null;
+        const showServings = () => {
+          if (!servingsInput) return;
+          const v = entered();
+          servingsInput.value = v > 0 ? fmt.editAmount.format(Math.round((v / per.protein) * 100) / 100) : '';
+        };
+        if (servingsInput) {
+          servingsInput.addEventListener('input', () => {
+            const sv = parseAmount(servingsInput.value, true);
+            if (sv && sv > 0) { amountInput.value = fmt.editAmount.format(Math.round(sv * per.protein * 10) / 10); refresh(); }
+          });
+          amountInput.addEventListener('input', showServings);
+          showServings();
+        }
+        const lines = a.items.filter((it) => it.status !== 'skip');
+        recipeCard = el('div', { class: 'entry-recipe' }, [
+          el('div', { class: 'entry-recipe-head' }, [
+            el('div', { class: 'entry-recipe-title', html: icon('book', 17) + `<span>${recipe.name.replace(/[&<>"]/g, '')}</span>` }),
+            el('button', { class: 'text-button', html: '<span>Open recipe</span>', onclick: () => openRecipeEditor(recipe, () => { render(); }) })
+          ]),
+          el('div', { class: 'summary-sub', text: `One serving: ${formatGrams(per.protein)}g protein · ${formatKcal(per.kcal)} kcal` +
+            (per.carbs != null ? ` · ${formatGrams(per.carbs)}g carbs` : '') + (per.fat != null ? ` · ${formatGrams(per.fat)}g fat` : '') +
+            (a.usingStated ? (recipe.stated && recipe.stated.manual ? ' (nutrition facts)' : ' (from the source)') : '') }),
+          servingsInput ? el('div', { class: 'inline-form' }, [servingsInput, el('span', { class: 'unit-label', text: 'servings logged' })]) : null,
+          recipe.tags && recipe.tags.length ? el('div', { class: 'recipe-row-tags', text: recipe.tags.map((t) => '#' + t).join(' ') }) : null,
+          lines.length ? el('div', { class: 'entry-recipe-lines' }, lines.map((it) => el('div', { class: 'entry-recipe-line' }, [
+            el('span', { text: it.parsed.text || it.line }),
+            it.status === 'unmatched' || it.status === 'noamount' ? null : el('span', { class: 'entry-recipe-p', text: `${formatGrams(it.protein)}g` })
+          ]))) : null
+        ]);
+      }
+
       const body = el('div', { class: 'edit-sheet' }, [
         el('div', {}, [el('div', { class: 'field-label', text: 'Protein name' }), nameInput]),
         el('div', {}, [
           el('div', { class: 'field-label', text: 'Protein amount' }),
           el('div', { class: 'edit-amount-box' }, [amountInput, el('span', { class: 'edit-unit', text: 'g' })])
         ]),
+        recipeCard,
         save
       ]);
 
@@ -1218,8 +1273,7 @@
           })
         ]),
         el('button', { class: 'add-protein-button', html: icon('link', 20) + '<span>Import from link</span>', onclick: () => openLinkImport(renderList) }),
-        searchInput,
-        tagBar,
+        el('div', { class: 'sticky-search' }, [searchInput, tagBar]),
         list
       ]);
       return {
@@ -1870,7 +1924,7 @@
         text: (preset && preset.text) || '',
         overrides: {},
         source: (preset && preset.source) || null,
-        stated: preset && preset.stated && (preset.stated.protein || preset.stated.kcal) ? preset.stated : null
+        stated: cleanStated(preset && preset.stated)
       };
     const startState = JSON.stringify(draft);
 
@@ -1941,6 +1995,38 @@
       tagInput.addEventListener('blur', commitTyped);
       renderTagChips();
 
+      // Optional nutrition facts per serving; when filled in they're used instead of the estimate.
+      const factInput = (label, key, unit) => {
+        const input = el('input', { class: 'small-input', type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: unit, 'aria-label': label });
+        if (draft.stated && draft.stated[key] != null) input.value = fmt.editAmount.format(draft.stated[key]);
+        return input;
+      };
+      const facts = {
+        protein: factInput('Protein per serving', 'protein', 'g'),
+        kcal: factInput('Calories per serving', 'kcal', 'kcal'),
+        carbs: factInput('Carbs per serving', 'carbs', 'g'),
+        fat: factInput('Fat per serving', 'fat', 'g')
+      };
+      const readFacts = () => {
+        const v = {};
+        Object.keys(facts).forEach((k) => { const x = parseAmount(facts[k].value || '', true); v[k] = x !== null && x >= 0 ? x : null; });
+        const before = JSON.stringify(draft.stated);
+        draft.stated = cleanStated(Object.assign(v, { manual: true }));
+        if (JSON.stringify(draft.stated) !== before) draft.useStated = !!draft.stated;
+        sync();
+      };
+      Object.keys(facts).forEach((k) => facts[k].addEventListener('input', readFacts));
+      const factsSection = el('div', { class: 'facts-section' }, [
+        el('div', { class: 'field-label', text: 'Nutrition facts per serving (optional)' }),
+        el('div', { class: 'facts-grid' }, [
+          el('label', { class: 'fact' }, [el('span', { text: 'Protein' }), facts.protein]),
+          el('label', { class: 'fact' }, [el('span', { text: 'Calories' }), facts.kcal]),
+          el('label', { class: 'fact' }, [el('span', { text: 'Carbs' }), facts.carbs]),
+          el('label', { class: 'fact' }, [el('span', { text: 'Fat' }), facts.fat])
+        ]),
+        el('div', { class: 'field-hint', text: 'If you know the nutrition facts, enter them here and they’re used instead of the estimate. Leave blank to work it out from the ingredients.' })
+      ]);
+
       const summary = el('div', { class: 'recipe-summary' });
       const breakdown = el('div', { class: 'ingredient-list' });
       const save = el('button', { class: 'nav-button bold', text: 'Save' });
@@ -1955,7 +2041,7 @@
         // Drop fixes for lines that no longer exist.
         const keys = new Set(draft.text.split(/\r?\n/).map(N.lineKey));
         Object.keys(draft.overrides).forEach((k) => { if (!keys.has(k)) delete draft.overrides[k]; });
-        save.disabled = !draft.name.trim() || !draft.text.trim();
+        save.disabled = !draft.name.trim() || (!draft.text.trim() && !draft.stated);
         renderAnalysis();
       }
 
@@ -1963,10 +2049,13 @@
         const a = recipeNumbers(draft);
         const per = a.perServing;
         const est = a.estimate;
+        const manual = !!(draft.stated && draft.stated.manual);
         const fromWhere = draft.source && /tiktok\.com/i.test(draft.source) ? 'caption' : 'recipe';
-        const statedText = draft.stated ? [draft.stated.protein ? `${formatGrams(draft.stated.protein)}g protein` : '', draft.stated.kcal ? `${formatKcal(draft.stated.kcal)} kcal` : ''].filter(Boolean).join(' · ') : '';
+        const st = draft.stated || {};
+        const statedText = [st.protein != null ? `${formatGrams(st.protein)}g protein` : '', st.kcal != null ? `${formatKcal(st.kcal)} kcal` : '', st.carbs != null ? `${formatGrams(st.carbs)}g carbs` : '', st.fat != null ? `${formatGrams(st.fat)}g fat` : ''].filter(Boolean).join(' · ');
+        const hasIngredients = a.items.some((it) => it.status !== 'skip');
         summary.replaceChildren(...[
-          el('div', { class: 'summary-label', text: a.usingStated ? `Per serving (from the ${fromWhere})` : 'Per serving (estimated)' }),
+          el('div', { class: 'summary-label', text: a.usingStated ? (manual ? 'Per serving (nutrition facts)' : `Per serving (from the ${fromWhere})`) : 'Per serving (estimated)' }),
           el('div', { class: 'summary-numbers' }, [
             el('div', { class: 'summary-stat' }, [
               el('span', { class: 'summary-big', text: formatGrams(per.protein) }),
@@ -1977,18 +2066,19 @@
               el('span', { class: 'summary-unit', text: 'kcal' })
             ])
           ]),
-          el('div', { class: 'summary-sub', text: (a.usingStated ? `Estimate from the ingredients: ${formatGrams(est.protein)}g protein · ${formatKcal(est.kcal)} kcal per serving. ` : '') +
-            `Whole recipe: ${formatGrams(a.total.protein)}g protein · ${formatKcal(a.total.kcal)} kcal · ${fmt.editAmount.format(a.servings)} ${a.servings === 1 ? 'serving' : 'servings'}` +
+          a.usingStated && (per.carbs != null || per.fat != null) ? el('div', { class: 'summary-sub', text: [per.carbs != null ? `${formatGrams(per.carbs)}g carbs` : '', per.fat != null ? `${formatGrams(per.fat)}g fat` : ''].filter(Boolean).join(' · ') }) : null,
+          el('div', { class: 'summary-sub', text: (a.usingStated && hasIngredients ? `Estimate from the ingredients: ${formatGrams(est.protein)}g protein · ${formatKcal(est.kcal)} kcal per serving. ` : '') +
+            `Whole recipe: ${formatGrams(a.usingStated ? per.protein * a.servings : a.total.protein)}g protein · ${formatKcal(a.usingStated ? per.kcal * a.servings : a.total.kcal)} kcal · ${fmt.editAmount.format(a.servings)} ${a.servings === 1 ? 'serving' : 'servings'}` +
             (per.grams ? ` · about ${formatGrams(per.grams)} g each` : '') }),
           draft.stated ? el('div', { class: 'stated-row' }, [
             el('div', { class: 'summary-sub stated', text: a.usingStated
-              ? `Using the ${fromWhere}’s numbers.`
-              : `The ${fromWhere} says ${statedText} per serving.` }),
-            el('button', {
+              ? (manual ? 'Using your nutrition facts.' : `Using the ${fromWhere}’s numbers.`)
+              : (manual ? `Your nutrition facts: ${statedText} per serving.` : `The ${fromWhere} says ${statedText} per serving.`) }),
+            hasIngredients || !a.usingStated ? el('button', {
               class: 'stated-toggle',
-              text: a.usingStated ? 'Use estimate' : `Use the ${fromWhere}’s numbers`,
+              text: a.usingStated ? 'Use estimate' : (manual ? 'Use nutrition facts' : `Use the ${fromWhere}’s numbers`),
               onclick: () => { draft.useStated = !a.usingStated; renderAnalysis(); }
-            })
+            }) : null
           ]) : null,
           !a.usingStated && a.issues ? el('div', { class: 'summary-warn', html: icon('warn', 15) + `<span>${a.issues} ${a.issues === 1 ? 'ingredient isn’t' : 'ingredients aren’t'} counted yet. Tap ${a.issues === 1 ? 'it' : 'them'} below to fix.</span>` }) : null
         ].filter(Boolean));
@@ -2076,6 +2166,7 @@
           el('div', { class: 'field-hint', text: 'Paste a recipe or type one ingredient per line. Section headings and steps are skipped.' })
         ]),
         summary,
+        factsSection,
         breakdown,
         existing ? el('button', {
           class: 'delete-text-button',
@@ -2355,7 +2446,7 @@
   // ---------- Backup & restore (web only) ----------
 
   const BACKUP_FORMAT = 'protein-tracker-backup';
-  const APP_VERSION = '20';
+  const APP_VERSION = '21';
 
   function exportBackup() {
     const backup = {

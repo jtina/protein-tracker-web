@@ -556,6 +556,10 @@
     if (pm) stated.protein = parseFloat(pm[1]);
     const cm = t.match(/(\d{2,4})\s*(?:kcals?|cals?|calories)\b/i) || t.match(/\b(?:calories|cals?|kcals?)\s*[:\-]?\s*(\d{2,4})\b/i);
     if (cm) stated.kcal = parseFloat(cm[1]);
+    const carb = t.match(/\bcarb(?:s|ohydrates?)?\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*g?\b/i) || t.match(/(\d+(?:\.\d+)?)\s*g?\s*(?:carbs?\b|C\b(?=\s*(?:[|/,·•-]|\d|$|\n)))/);
+    if (carb) stated.carbs = parseFloat(carb[1]);
+    const fat = t.match(/\bfats?\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*g?\b/i) || t.match(/(\d+(?:\.\d+)?)\s*g?\s*(?:fats?\b|F\b(?=\s*(?:[|/,·•-]|\d|$|\n)))/);
+    if (fat) stated.fat = parseFloat(fat[1]);
 
     // Headings run into the line before them when the line breaks are lost ("…sweetener REMAINING: 150g…").
     t = t.replace(/\s+([A-Z][A-Za-z]*(?:\s+[A-Za-z]+)?(?:\s*\([^)]*\))?\s*:)(?=\s|$)/g, '\n$1\n');
@@ -642,6 +646,10 @@
     const kcal = firstNumber(n.calories);
     if (protein > 0) stated.protein = protein;
     if (kcal > 0) stated.kcal = kcal;
+    const carbs = firstNumber(n.carbohydrateContent);
+    const fat = firstNumber(n.fatContent);
+    if (carbs != null && carbs >= 0) stated.carbs = carbs;
+    if (fat != null && fat >= 0) stated.fat = fat;
     const servings = firstNumber(node.recipeYield);
     return {
       name: decodeEntities(node.name || node.headline || '').slice(0, 80),
