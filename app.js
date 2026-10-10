@@ -209,6 +209,10 @@
       weight: Number.isFinite(weight) && weight > 0 ? weight : null,
       text: raw.text,
       overrides: overrides,
+      source: typeof raw.source === 'string' && /^https:\/\//.test(raw.source) ? raw.source.slice(0, 500) : null,
+      stated: raw.stated && typeof raw.stated === 'object' && (Number(raw.stated.protein) > 0 || Number(raw.stated.kcal) > 0)
+        ? { protein: Number(raw.stated.protein) > 0 ? Number(raw.stated.protein) : null, kcal: Number(raw.stated.kcal) > 0 ? Number(raw.stated.kcal) : null }
+        : null,
       updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date().toISOString()
     };
   }
@@ -277,6 +281,8 @@
       case 'search': return stroke('<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 20.5 20.5"/>', 2.4);
       case 'chevron': return stroke('<path d="M9 5.5 15.5 12 9 18.5"/>', 2.4);
       case 'warn': return stroke('<path d="M12 4 21 19.5H3z"/><path d="M12 10v4.5M12 17.2v.1"/>', 2.2);
+      case 'video': return stroke('<rect x="3" y="5.5" width="13" height="13" rx="3"/><path d="M16 10.5 21 7.5v9l-5-3"/>', 2);
+      case 'link': return stroke('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>', 2);
       case 'palette': return `<svg class="icon" width="${s}" height="${s}" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M12 2.5C6.5 2.5 2.5 6.6 2.5 11.7c0 5.2 4.2 9.8 9.3 9.8 1.6 0 2.4-.9 2.4-2 0-.6-.2-1-.5-1.4-.3-.4-.5-.8-.5-1.3 0-1 .8-1.7 1.8-1.7h2.2c2.8 0 4.8-2 4.8-4.8C22 6.6 17.6 2.5 12 2.5zM6.8 13.2a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4zm2.6-4.6a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4zm5.2 0a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4zm3.2 3.9a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4z"/></svg>`;
     }
     return '';
@@ -986,6 +992,7 @@
             onclick: () => pickTextFile((text) => openRecipeEditor(null, renderList, N.extractRecipe(text)))
           })
         ]),
+        el('button', { class: 'add-protein-button', html: icon('video', 20) + '<span>Import from TikTok</span>', onclick: () => openCaptionImport(renderList) }),
         list
       ]);
       return {
@@ -1011,12 +1018,114 @@
     input.click();
   }
 
+  // ---------- Import a recipe from a TikTok caption ----------
+
+  // TikTok's public oEmbed endpoint returns a video's caption as "title".
+  function fetchTikTokCaption(link) {
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = setTimeout(() => ctrl && ctrl.abort(), 12000);
+    return fetch('https://www.tiktok.com/oembed?url=' + encodeURIComponent(link), ctrl ? { signal: ctrl.signal } : undefined)
+      .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then((data) => {
+        const caption = data && typeof data.title === 'string' ? data.title.trim() : '';
+        if (!caption) throw new Error('No caption');
+        return { caption: caption, author: data.author_name || '' };
+      })
+      .finally(() => clearTimeout(timer));
+  }
+
+  function openCaptionImport(onSaved) {
+    present('sheet', (dismiss) => {
+      const linkInput = el('input', { class: 'search-input', type: 'url', inputmode: 'url', placeholder: 'https://www.tiktok.com/…', autocomplete: 'off', autocapitalize: 'off', 'aria-label': 'TikTok link' });
+      const captionInput = el('textarea', { class: 'recipe-text', rows: '6', 'aria-label': 'Caption', placeholder: 'The caption shows up here. You can also paste it yourself.' });
+      const status = el('div', { class: 'field-hint' });
+      const getButton = el('button', { class: 'pill-button', text: 'Get caption' });
+      const make = el('button', { class: 'confirm-button', text: 'Make recipe' });
+      make.style.background = 'var(--accent)';
+      const refresh = () => { make.disabled = !captionInput.value.trim(); };
+
+      const isTikTok = (v) => /^https?:\/\/([a-z0-9-]+\.)*tiktok\.com\//i.test(v.trim());
+      function getCaption() {
+        const link = linkInput.value.trim();
+        if (!isTikTok(link)) {
+          status.textContent = 'Paste a link that starts with https://www.tiktok.com/ (in TikTok: Share → Copy link).';
+          return;
+        }
+        status.textContent = 'Getting the caption…';
+        getButton.disabled = true;
+        fetchTikTokCaption(link)
+          .then((res) => {
+            captionInput.value = res.caption;
+            status.textContent = res.author ? `Caption from ${res.author}.` : 'Got the caption.';
+            refresh();
+          })
+          .catch(() => {
+            status.textContent = 'TikTok didn’t share the caption with this app. Open the video, copy the caption (or type the ingredients), and paste it below.';
+            captionInput.focus({ preventScroll: true });
+          })
+          .finally(() => { getButton.disabled = false; });
+      }
+      getButton.addEventListener('click', getCaption);
+      linkInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') getCaption(); });
+      linkInput.addEventListener('paste', () => setTimeout(() => { if (isTikTok(linkInput.value)) getCaption(); }, 0));
+      captionInput.addEventListener('input', refresh);
+
+      const pasteButton = navigator.clipboard && navigator.clipboard.readText ? el('button', {
+        class: 'text-button',
+        html: '<span>Paste link</span>',
+        onclick: () => navigator.clipboard.readText().then((t) => {
+          linkInput.value = String(t || '').trim();
+          if (isTikTok(linkInput.value)) getCaption();
+        }).catch(() => linkInput.focus())
+      }) : null;
+
+      make.addEventListener('click', () => {
+        const ex = N.extractFromCaption(captionInput.value);
+        const link = linkInput.value.trim();
+        dismiss();
+        openRecipeEditor(null, onSaved, {
+          name: ex.name,
+          servings: ex.servings,
+          text: ex.text || captionInput.value.trim(),
+          source: isTikTok(link) ? link.replace(/^http:/, 'https:') : null,
+          stated: ex.stated
+        });
+      });
+      refresh();
+
+      const body = el('div', { class: 'accent-sheet fix-sheet' }, [
+        el('div', {}, [
+          el('div', { class: 'field-row' }, [el('div', { class: 'field-label', text: 'TikTok link' }), pasteButton]),
+          el('div', { class: 'inline-form' }, [linkInput, getButton]),
+          status
+        ]),
+        el('div', {}, [el('div', { class: 'field-label', text: 'Caption' }), captionInput]),
+        make,
+        el('div', { class: 'footnote', text: 'Hashtags, emojis and chatter are removed, and ingredient lines are kept. Recipes that only appear in the video itself need to be typed in.' })
+      ]);
+      return {
+        navBar: navBar('From TikTok', null, el('button', { class: 'nav-button bold', text: 'Cancel', onclick: dismiss })),
+        body: body,
+        onShow: () => linkInput.focus({ preventScroll: true })
+      };
+    });
+  }
+
   // ---------- Recipe editor ----------
 
   function openRecipeEditor(existing, onSaved, preset) {
     const draft = existing
       ? JSON.parse(JSON.stringify(existing))
-      : { id: uuid(), name: (preset && preset.name) || '', servings: (preset && preset.servings) || 4, weight: null, text: (preset && preset.text) || '', overrides: {} };
+      : {
+        id: uuid(),
+        name: (preset && preset.name) || '',
+        servings: (preset && preset.servings) || 4,
+        weight: null,
+        text: (preset && preset.text) || '',
+        overrides: {},
+        source: (preset && preset.source) || null,
+        stated: preset && preset.stated && (preset.stated.protein || preset.stated.kcal) ? preset.stated : null
+      };
     const startState = JSON.stringify(draft);
 
     present('cover', (dismiss) => {
@@ -1071,6 +1180,9 @@
           el('div', { class: 'summary-sub', text:
             `Whole recipe: ${formatGrams(a.total.protein)}g protein · ${formatKcal(a.total.kcal)} kcal · ${fmt.editAmount.format(a.servings)} ${a.servings === 1 ? 'serving' : 'servings'}` +
             (per.grams ? ` · about ${formatGrams(per.grams)} g each` : '') }),
+          draft.stated ? el('div', { class: 'summary-sub stated', text:
+            'The caption says ' + [draft.stated.protein ? `${formatGrams(draft.stated.protein)}g protein` : '', draft.stated.kcal ? `${formatKcal(draft.stated.kcal)} kcal` : ''].filter(Boolean).join(' · ') +
+            '. Compare it with the estimate above; check the servings if they’re far apart.' }) : null,
           a.issues ? el('div', { class: 'summary-warn', html: icon('warn', 15) + `<span>${a.issues} ${a.issues === 1 ? 'ingredient isn’t' : 'ingredients aren’t'} counted yet. Tap ${a.issues === 1 ? 'it' : 'them'} below to fix.</span>` }) : null
         ].filter(Boolean));
 
@@ -1144,6 +1256,7 @@
 
       const body = el('div', { class: 'edit-sheet recipe-editor' }, [
         el('div', {}, [el('div', { class: 'field-label', text: 'Name' }), nameInput]),
+        draft.source ? el('a', { class: 'text-button source-link', href: draft.source, target: '_blank', rel: 'noopener noreferrer', html: icon('link', 16) + '<span>Open the original video</span>' }) : null,
         el('div', { class: 'recipe-fields' }, [
           el('label', { class: 'recipe-field' }, [el('span', { class: 'field-label', text: 'Servings' }), servingsInput]),
           el('label', { class: 'recipe-field' }, [el('span', { class: 'field-label', text: 'Cooked weight (g)' }), weightInput])

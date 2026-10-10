@@ -396,7 +396,8 @@
       grams = g.grams;
       estimate = g.estimate;
       if (grams == null) {
-        if ((parsed.toTaste || parsed.optional) && parsed.qty == null) return Object.assign(base, { food: chosen, status: 'skip', note: 'To taste' });
+        const pinch = ['salt', 'spices', 'water', 'herbs'].indexOf(chosen.id) >= 0;
+        if ((parsed.toTaste || parsed.optional || pinch) && parsed.qty == null) return Object.assign(base, { food: chosen, status: 'skip', note: 'To taste' });
         return Object.assign(base, { food: chosen, status: 'noamount', note: g.why || 'Add an amount' });
       }
     }
@@ -513,7 +514,48 @@
     return { name: name.slice(0, 80), p: Math.round(p * 10) / 10, c: Math.round(c), each: each, cup: undefined };
   }
 
-  const api = { FOODS, FOOD_BY_ID, parseLine, matchFood, analyzeLine, analyzeRecipe, extractRecipe, lineKey, normalize, fromOpenFoodFacts };
+  const EMOJI = /[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\u{1F3FB}-\u{1F3FF}⃣️‍]/gu;
+
+  /**
+   * A social-media caption (TikTok, Instagram) → { name, servings, text, stated }.
+   * Drops hashtags, mentions, links and emojis, splits one-line ingredient lists into lines,
+   * and keeps only lines that look like ingredients. `stated` is the protein / calories the
+   * creator wrote in the caption, if any.
+   */
+  function extractFromCaption(caption) {
+    let t = String(caption || '').replace(/\r/g, '');
+    t = t.replace(/https?:\/\/\S+/g, ' ').replace(/(^|\s)[#@][\w.]+/gu, ' ');
+
+    const stated = {};
+    const pm = t.match(/(\d+(?:\.\d+)?)\s*g(?:rams?)?\s*(?:of\s+)?protein\b/i) || t.match(/protein\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*g\b/i);
+    if (pm) stated.protein = parseFloat(pm[1]);
+    const cm = t.match(/(\d{2,4})\s*(?:kcal|cals?|calories)\b/i) || t.match(/(?:calories|cals?|kcal)\s*[:\-]?\s*(\d{2,4})\b/i);
+    if (cm) stated.kcal = parseFloat(cm[1]);
+
+    // Emojis and bullets often separate ingredients on one line: treat them as line breaks.
+    t = t.replace(/[•·▪●◦‣]/g, '\n').replace(EMOJI, '\n');
+    let lines = t.split('\n').map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    // Still long run-on lines: split on commas / semicolons before an amount ("1 cup rice, 2 eggs").
+    lines = lines.flatMap((l) => l.split(new RegExp('\\s*[,;]\\s*(?=' + NUM + '\\s*\\S|(?:a|an|one|two|three|four|half)\\s)', 'i')));
+    // Sentences ("…spinach. Bake 20 min") and long comma lists ("…, salt and pepper").
+    lines = lines.flatMap((l) => l.split(/(?<=[a-z)])[.!?]+\s+/i)).flatMap((l) => (l.length > 35 ? l.split(/\s*,\s*/) : [l]));
+    lines = lines.map((l) => l.replace(/^[-–:*>\s]+|[\s:–-]+$/g, '').trim()).filter(Boolean);
+
+    const name = (lines[0] && !readQuantity(lines[0]) && lines[0].length <= 70 ? lines[0] : '').replace(/[!.?]+$/, '').trim();
+    const ex = extractRecipe(lines.join('\n'));
+    const looksLikeIngredient = (l) => {
+      const p = parseLine(l);
+      if (isHeading(l)) return false;
+      if (/\b(protein|calories|cals?|kcal|macros?|carbs?|fat)\b\s*[:\-]?\s*\d/i.test(l) && !matchFood(p.food)) return false;
+      if (/^\s*\d+(?:\.\d+)?\s*(?:g|grams?)?\s*(?:of\s+)?(?:protein|carbs?|fats?|cals?|kcal|calories)\b/i.test(l)) return false;
+      if (p.qty != null && (p.unit || matchFood(p.food))) return true;
+      return !!matchFood(l) && l.length <= 40 && !/[!?]/.test(l) && l.split(' ').length <= 6;
+    };
+    const kept = ex.text.split('\n').filter((l) => l && l !== name && looksLikeIngredient(l));
+    return { name: (ex.name || name).replace(/[!.?\s]+$/, ''), servings: ex.servings, text: kept.join('\n'), stated: stated };
+  }
+
+  const api = { FOODS, FOOD_BY_ID, parseLine, matchFood, analyzeLine, analyzeRecipe, extractRecipe, extractFromCaption, lineKey, normalize, fromOpenFoodFacts };
   root.PTNutrition = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof self !== 'undefined' ? self : this);

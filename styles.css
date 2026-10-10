@@ -635,3 +635,7 @@ svg.icon { display: block; flex-shrink: 0; }
 .stepper { display: flex; align-items: center; gap: 14px; }
 .stepper .amount-block { flex: 1; min-width: 0; }
 .stepper .amount-input { padding: 14px 0; font-size: 48px; }
+
+.summary-sub.stated { color: var(--label); opacity: 0.85; }
+.source-link { margin: -8px 0 0; text-decoration: none; }
+.recipe-list { margin-top: 2px; }
