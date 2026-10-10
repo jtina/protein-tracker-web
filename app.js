@@ -131,14 +131,16 @@
         date: dayKey(date),
         amount: amount,
         isAddition: isAddition,
-        name: trimmedName(name)
+        name: trimmedName(name),
+        updatedAt: new Date().toISOString()
       };
     },
 
     add(amount, name, date) {
       if (!(amount > 0)) return false;
-      this.entries.push(this.makeEntry(date, amount, true, name));
-      if (this.save()) return true;
+      const entry = this.makeEntry(date, amount, true, name);
+      this.entries.push(entry);
+      if (this.save()) { cloud.changed('entries', entry.id); return true; }
       this.entries.pop();
       return false;
     },
@@ -147,8 +149,9 @@
       if (!(amount > 0)) return false;
       const currentTotal = this.protein(date);
       if (!(currentTotal > 0)) return false;
-      this.entries.push(this.makeEntry(date, Math.min(amount, currentTotal), false, name));
-      if (this.save()) return true;
+      const entry = this.makeEntry(date, Math.min(amount, currentTotal), false, name);
+      this.entries.push(entry);
+      if (this.save()) { cloud.changed('entries', entry.id); return true; }
       this.entries.pop();
       return false;
     },
@@ -159,7 +162,8 @@
       const original = Object.assign({}, this.entries[index]);
       this.entries[index].amount = amount;
       this.entries[index].name = trimmedName(name);
-      if (this.save()) return true;
+      this.entries[index].updatedAt = new Date().toISOString();
+      if (this.save()) { cloud.changed('entries', id); return true; }
       this.entries[index] = original;
       return false;
     },
@@ -169,7 +173,7 @@
       if (index < 0) return false;
       const original = this.entries[index];
       this.entries.splice(index, 1);
-      if (this.save()) return true;
+      if (this.save()) { cloud.deleted('entries', id); return true; }
       this.entries.splice(Math.min(index, this.entries.length), 0, original);
       return false;
     }
@@ -179,6 +183,17 @@
 
   const RECIPES_KEY = 'proteinTracker.recipes';
   const N = window.PTNutrition;
+
+  /** Tags: lower-case, no "#", no duplicates. */
+  function cleanTags(list) {
+    if (!Array.isArray(list)) return [];
+    const out = [];
+    list.forEach((t) => {
+      const tag = String(t || '').replace(/^#+/, '').replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 30);
+      if (tag && out.indexOf(tag) < 0 && out.length < 20) out.push(tag);
+    });
+    return out;
+  }
 
   // Returns a clean recipe, or null if the record isn't a valid recipe.
   function sanitizeRecipe(raw) {
@@ -212,6 +227,7 @@
       text: raw.text,
       overrides: overrides,
       useStated: raw.useStated === true,
+      tags: cleanTags(raw.tags),
       source: typeof raw.source === 'string' && /^https:\/\//.test(raw.source) ? raw.source.slice(0, 500) : null,
       stated: raw.stated && typeof raw.stated === 'object' && (Number(raw.stated.protein) > 0 || Number(raw.stated.kcal) > 0)
         ? { protein: Number(raw.stated.protein) > 0 ? Number(raw.stated.protein) : null, kcal: Number(raw.stated.kcal) > 0 ? Number(raw.stated.kcal) : null }
@@ -243,12 +259,30 @@
       return this.list.slice().sort((a, b) => a.name.localeCompare(b.name));
     },
 
+    allTags() {
+      const counts = {};
+      this.list.forEach((r) => (r.tags || []).forEach((t) => { counts[t] = (counts[t] || 0) + 1; }));
+      return Object.keys(counts).sort((a, b) => counts[b] - counts[a] || a.localeCompare(b));
+    },
+
+    /** Recipes whose name or tags match every word of the query, and that have all the given tags. */
+    search(query, tags) {
+      const words = String(query || '').toLowerCase().replace(/#/g, ' ').split(/\s+/).filter(Boolean);
+      const need = tags || [];
+      return this.sorted().filter((r) => {
+        const rt = r.tags || [];
+        if (need.some((t) => rt.indexOf(t) < 0)) return false;
+        const hay = (r.name + ' ' + rt.join(' ')).toLowerCase();
+        return words.every((w) => hay.indexOf(w) >= 0);
+      });
+    },
+
     upsert(recipe) {
       const previous = this.list.slice();
       const index = this.list.findIndex((r) => r.id === recipe.id);
       const clean = sanitizeRecipe(Object.assign({}, recipe, { updatedAt: new Date().toISOString() }));
       if (index >= 0) this.list[index] = clean; else this.list.push(clean);
-      if (this.save()) return true;
+      if (this.save()) { cloud.changed('recipes', clean.id); return true; }
       this.list = previous;
       return false;
     },
@@ -256,7 +290,7 @@
     remove(id) {
       const previous = this.list.slice();
       this.list = this.list.filter((r) => r.id !== id);
-      if (this.save()) return true;
+      if (this.save()) { cloud.deleted('recipes', id); return true; }
       this.list = previous;
       return false;
     }
@@ -316,6 +350,7 @@
       case 'warn': return stroke('<path d="M12 4 21 19.5H3z"/><path d="M12 10v4.5M12 17.2v.1"/>', 2.2);
       case 'video': return stroke('<rect x="3" y="5.5" width="13" height="13" rx="3"/><path d="M16 10.5 21 7.5v9l-5-3"/>', 2);
       case 'link': return stroke('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>', 2);
+      case 'cloud': return stroke('<path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.6 9.1 4.75 4.75 0 0 0 7 18.5z"/>', 2);
       case 'palette': return `<svg class="icon" width="${s}" height="${s}" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M12 2.5C6.5 2.5 2.5 6.6 2.5 11.7c0 5.2 4.2 9.8 9.3 9.8 1.6 0 2.4-.9 2.4-2 0-.6-.2-1-.5-1.4-.3-.4-.5-.8-.5-1.3 0-1 .8-1.7 1.8-1.7h2.2c2.8 0 4.8-2 4.8-4.8C22 6.6 17.6 2.5 12 2.5zM6.8 13.2a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4zm2.6-4.6a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4zm5.2 0a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4zm3.2 3.9a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4z"/></svg>`;
     }
     return '';
@@ -924,21 +959,28 @@
           el('div', { class: 'add-date', text: fmt.sheetDate.format(date) })
         ]),
         el('div', {}, [el('div', { class: 'field-label', text: 'Protein name' }), nameInput]),
-        isAdd && recipes.list.length ? el('div', {}, [
-          el('div', { class: 'field-label', text: 'From a recipe (1 serving)' }),
-          el('div', { class: 'recipe-chips' }, recipes.sorted().map((r) => {
-            const per = recipeNumbers(r).perServing;
-            return el('button', {
-              class: 'recipe-chip',
-              text: `${r.name} · ${formatGrams(per.protein)}g`,
-              onclick: () => {
-                nameInput.value = r.name;
-                amountInput.value = fmt.editAmount.format(Math.round(per.protein * 10) / 10);
-                refresh();
-              }
-            });
-          }))
-        ]) : null,
+        isAdd && recipes.list.length ? (() => {
+          const chips = el('div', { class: 'recipe-chips' });
+          const finder = recipes.list.length > 3 ? el('input', { class: 'search-input compact', type: 'search', placeholder: 'Search recipes by name or tag', autocomplete: 'off', 'aria-label': 'Search recipes' }) : null;
+          const fill = () => {
+            const found = recipes.search(finder ? finder.value : '');
+            chips.replaceChildren(...(found.length ? found.map((r) => {
+              const per = recipeNumbers(r).perServing;
+              return el('button', {
+                class: 'recipe-chip',
+                text: `${r.name} · ${formatGrams(per.protein)}g`,
+                onclick: () => {
+                  nameInput.value = r.name;
+                  amountInput.value = fmt.editAmount.format(Math.round(per.protein * 10) / 10);
+                  refresh();
+                }
+              });
+            }) : [el('div', { class: 'field-hint', text: 'No recipes match.' })]));
+          };
+          if (finder) finder.addEventListener('input', fill);
+          fill();
+          return el('div', {}, [el('div', { class: 'field-label', text: 'From a recipe (1 serving)' }), finder, chips]);
+        })() : null,
         isAdd ? el('div', {}, [
           el('div', { class: 'field-label', text: 'From a food (works out the protein)' }),
           foodInput,
@@ -1053,14 +1095,39 @@
   function openRecipesSheet() {
     let dismissSheet = null;
     const list = el('div', { class: 'recipe-list' });
+    const searchInput = el('input', { class: 'search-input', type: 'search', placeholder: 'Search by name or tag', autocomplete: 'off', 'aria-label': 'Search recipes' });
+    const tagBar = el('div', { class: 'recipe-chips tag-filter' });
+    let activeTags = [];
+    searchInput.addEventListener('input', () => renderList());
+
+    function renderTags() {
+      const all = recipes.allTags();
+      activeTags = activeTags.filter((t) => all.indexOf(t) >= 0);
+      tagBar.replaceChildren(...all.map((t) => el('button', {
+        class: 'tag-chip' + (activeTags.indexOf(t) >= 0 ? ' on' : ''),
+        text: '#' + t,
+        'aria-pressed': activeTags.indexOf(t) >= 0 ? 'true' : 'false',
+        onclick: () => {
+          activeTags = activeTags.indexOf(t) >= 0 ? activeTags.filter((x) => x !== t) : activeTags.concat(t);
+          renderList();
+        }
+      })));
+      tagBar.style.display = all.length ? '' : 'none';
+      searchInput.style.display = recipes.list.length ? '' : 'none';
+    }
 
     function renderList() {
-      const all = recipes.sorted();
-      if (!all.length) {
+      renderTags();
+      if (!recipes.list.length) {
         list.replaceChildren(el('div', { class: 'recipe-empty' }, [
           el('div', { class: 'recipe-empty-title', text: 'No recipes yet' }),
           el('div', { text: 'Add a recipe and its ingredients, and the app works out protein and calories per serving.' })
         ]));
+        return;
+      }
+      const all = recipes.search(searchInput.value, activeTags);
+      if (!all.length) {
+        list.replaceChildren(el('div', { class: 'recipe-empty' }, [el('div', { text: 'No recipes match.' })]));
         return;
       }
       list.replaceChildren(...all.map((r) => {
@@ -1069,7 +1136,8 @@
         return el('div', { class: 'recipe-row' }, [
           el('button', { class: 'recipe-row-main', 'aria-label': `Open ${r.name}`, onclick: () => openRecipeEditor(r, renderList) }, [
             el('div', { class: 'recipe-row-name', text: r.name }),
-            el('div', { class: 'recipe-row-sub', text: `${formatGrams(per.protein)}g protein · ${formatKcal(per.kcal)} kcal per serving` + (a.usingStated ? ' (from the source)' : a.issues ? ` · ${a.issues} to fix` : '') })
+            el('div', { class: 'recipe-row-sub', text: `${formatGrams(per.protein)}g protein · ${formatKcal(per.kcal)} kcal per serving` + (a.usingStated ? ' (from the source)' : a.issues ? ` · ${a.issues} to fix` : '') }),
+            r.tags && r.tags.length ? el('div', { class: 'recipe-row-tags', text: r.tags.map((t) => '#' + t).join(' ') }) : null
           ]),
           el('button', {
             class: 'recipe-log-button',
@@ -1094,6 +1162,8 @@
           })
         ]),
         el('button', { class: 'add-protein-button', html: icon('link', 20) + '<span>Import from link</span>', onclick: () => openLinkImport(renderList) }),
+        searchInput,
+        tagBar,
         list
       ]);
       return {
@@ -1379,6 +1449,57 @@
       });
       textInput.value = draft.text;
 
+      // Tags: type and press Enter or a comma; tap a tag to remove it. The input itself is never
+      // re-rendered while typing, so it keeps focus.
+      draft.tags = cleanTags(draft.tags);
+      const tagChips = el('span', { class: 'tag-chips-inline' });
+      const tagInput = el('input', { class: 'tag-input', type: 'text', autocomplete: 'off', autocapitalize: 'off', enterkeyhint: 'done', 'aria-label': 'Add a tag' });
+      const tagList = el('div', { class: 'tag-list' }, [tagChips, tagInput]);
+      const tagSuggest = el('div', { class: 'recipe-chips' });
+      function renderTagChips() {
+        tagChips.replaceChildren(...draft.tags.map((t) => el('button', {
+          class: 'tag-chip on',
+          'aria-label': `Remove tag ${t}`,
+          html: `<span>#${t.replace(/[&<>"]/g, '')}</span><span class="tag-x">×</span>`,
+          onclick: () => { draft.tags = draft.tags.filter((x) => x !== t); renderTagChips(); }
+        })));
+        tagInput.placeholder = draft.tags.length ? 'Add a tag' : 'Add tags, e.g. dinner, meal prep';
+        renderTagSuggestions();
+      }
+      function renderTagSuggestions() {
+        const typed = tagInput.value.trim().toLowerCase().replace(/^#/, '');
+        const ideas = recipes.allTags().filter((t) => draft.tags.indexOf(t) < 0 && (!typed || t.indexOf(typed) >= 0)).slice(0, 8);
+        tagSuggest.replaceChildren(...ideas.map((t) => el('button', {
+          class: 'tag-chip',
+          text: '#' + t,
+          // Keep focus in the input so tapping a suggestion doesn't also add what was typed.
+          onpointerdown: (e) => e.preventDefault(),
+          onmousedown: (e) => e.preventDefault(),
+          onclick: () => { addTags(t); tagInput.value = ''; renderTagChips(); }
+        })));
+      }
+      function addTags(text) {
+        draft.tags = cleanTags(draft.tags.concat(String(text).split(/[,#]/)));
+      }
+      const commitTyped = () => {
+        if (!tagInput.value.trim()) return;
+        addTags(tagInput.value);
+        tagInput.value = '';
+        renderTagChips();
+      };
+      tagInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); commitTyped(); }
+        else if (e.key === 'Backspace' && !tagInput.value && draft.tags.length) {
+          draft.tags = draft.tags.slice(0, -1);
+          renderTagChips();
+        }
+      });
+      tagInput.addEventListener('input', () => {
+        if (tagInput.value.indexOf(',') >= 0) commitTyped(); else renderTagSuggestions();
+      });
+      tagInput.addEventListener('blur', commitTyped);
+      renderTagChips();
+
       const summary = el('div', { class: 'recipe-summary' });
       const breakdown = el('div', { class: 'ingredient-list' });
       const save = el('button', { class: 'nav-button bold', text: 'Save' });
@@ -1478,6 +1599,7 @@
 
       save.addEventListener('click', () => {
         sync();
+        if (tagInput.value.trim()) { addTags(tagInput.value); tagInput.value = ''; }
         if (save.disabled) return;
         if (!recipes.upsert(draft)) {
           showAlert("Couldn't save recipe", 'Unable to save this recipe.');
@@ -1501,6 +1623,7 @@
 
       const body = el('div', { class: 'edit-sheet recipe-editor' }, [
         el('div', {}, [el('div', { class: 'field-label', text: 'Name' }), nameInput]),
+        el('div', {}, [el('div', { class: 'field-label', text: 'Tags' }), tagList, tagSuggest]),
         draft.source ? el('a', { class: 'text-button source-link', href: draft.source, target: '_blank', rel: 'noopener noreferrer', html: icon('link', 16) + '<span>Open the original video</span>' }) : null,
         el('div', { class: 'recipe-fields' }, [
           el('label', { class: 'recipe-field' }, [el('span', { class: 'field-label', text: 'Servings' }), servingsInput]),
@@ -1829,7 +1952,8 @@
       date: raw.date,
       amount: amount,
       isAddition: raw.isAddition,
-      name: trimmedName(typeof raw.name === 'string' ? raw.name : '')
+      name: trimmedName(typeof raw.name === 'string' ? raw.name : ''),
+      updatedAt: typeof raw.updatedAt === 'string' && !isNaN(Date.parse(raw.updatedAt)) ? raw.updatedAt : timestamp.toISOString()
     };
   }
 
@@ -1851,6 +1975,10 @@
     let added = backup.entries.length;
     let addedRecipes = backup.recipes.length;
     if (replace) {
+      const keepE = new Set(backup.entries.map((e) => e.id));
+      const keepR = new Set(backup.recipes.map((r) => r.id));
+      previous.forEach((e) => { if (!keepE.has(e.id)) cloud.deleted('entries', e.id); });
+      previousRecipes.forEach((r) => { if (!keepR.has(r.id)) cloud.deleted('recipes', r.id); });
       store.entries = backup.entries.slice();
       recipes.list = backup.recipes.slice();
     } else {
@@ -1871,6 +1999,7 @@
       showAlert("Couldn't import data", 'Unable to save the imported entries.');
       return;
     }
+    cloud.markAll();
     if (replace && backup.accentColor) {
       storageSet(ACCENT_KEY, backup.accentColor);
       applyAccent(backup.accentColor);
@@ -1918,11 +2047,12 @@
     present('sheet', (dismiss) => {
       const count = store.entries.length;
       const body = el('div', { class: 'accent-sheet' }, [
+        cloudSection(),
         el('div', {}, [
           el('div', { class: 'accent-heading', text: 'Back up your data' }),
           el('div', {
             class: 'backup-note',
-            text: 'Your entries are saved only in this browser on this device. Export a backup file to keep a copy or move your log to another phone, browser, or the home-screen app.'
+            text: 'Your entries are saved in this browser on this device (and in your Supabase project when cloud sync is on). Export a backup file to keep a copy or move your log to another phone, browser, or the home-screen app.'
           })
         ]),
         el('button', { class: 'add-protein-button', html: icon('backup', 20) + '<span>Export data</span>', onclick: exportBackup }),
@@ -1930,10 +2060,388 @@
         el('div', { class: 'footnote', text: `${count} ${count === 1 ? 'entry' : 'entries'} and ${recipes.list.length} ${recipes.list.length === 1 ? 'recipe' : 'recipes'} on this device` })
       ]);
       return {
-        navBar: navBar('Backup', null, el('button', { class: 'nav-button bold', text: 'Done', onclick: dismiss })),
+        navBar: navBar('Backup & Sync', null, el('button', { class: 'nav-button bold', text: 'Done', onclick: dismiss })),
         body: body
       };
     });
+  }
+
+  // ---------- Cloud sync (Supabase) ----------
+  // Optional. Fill these in to connect every copy of the app to your Supabase project, or enter
+  // them in Backup & Sync on each device. The anon key is meant to be public; row-level
+  // security (supabase/schema.sql) keeps each account's data private.
+  const SUPABASE_URL = '';
+  const SUPABASE_ANON_KEY = '';
+  const SUPABASE_JS = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+  const SYNC_KEY = 'proteinTracker.sync';
+  const PAGE = 1000;
+
+  const cloud = (function () {
+    let meta = readMeta();
+    let client = null;
+    let user = null;
+    let status = 'off'; // off, connecting, signedout, syncing, synced, error
+    let message = '';
+    let running = null;
+    let again = false;
+    let timer = null;
+    const listeners = new Set();
+
+    function readMeta() {
+      let m = null;
+      try { m = JSON.parse(storageGet(SYNC_KEY) || 'null'); } catch (_) { m = null; }
+      m = m && typeof m === 'object' ? m : {};
+      m.pending = m.pending || {};
+      m.gone = m.gone || {};
+      m.lastPull = m.lastPull || {};
+      ['entries', 'recipes'].forEach((k) => {
+        m.pending[k] = m.pending[k] || {};
+        m.gone[k] = m.gone[k] || {};
+      });
+      return m;
+    }
+    function saveMeta() { storageSet(SYNC_KEY, JSON.stringify(meta)); }
+    function emit() { listeners.forEach((fn) => { try { fn(); } catch (_) { /* ignore */ } }); }
+    function setStatus(s, msg) { status = s; message = msg || ''; emit(); }
+
+    function config() {
+      if (SUPABASE_URL && SUPABASE_ANON_KEY) return { url: SUPABASE_URL, key: SUPABASE_ANON_KEY, builtIn: true };
+      if (meta.url && meta.key) return { url: meta.url, key: meta.key, builtIn: false };
+      return null;
+    }
+
+    function loadLibrary() {
+      if (window.supabase && window.supabase.createClient) return Promise.resolve(window.supabase);
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = SUPABASE_JS;
+        script.onload = () => (window.supabase && window.supabase.createClient ? resolve(window.supabase) : reject(new Error('Sync library missing')));
+        script.onerror = () => reject(new Error('Couldn’t load the sync library. Check your connection.'));
+        document.head.appendChild(script);
+      });
+    }
+
+    function start() {
+      const cfg = config();
+      if (!cfg) { setStatus('off'); return Promise.resolve(); }
+      setStatus('connecting');
+      return loadLibrary().then((lib) => {
+        client = lib.createClient(cfg.url, cfg.key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey: 'proteinTracker.auth' } });
+        client.auth.onAuthStateChange((event, session) => {
+          const next = session && session.user ? session.user : null;
+          const changed = (next && next.id) !== (user && user.id);
+          user = next;
+          if (!user) { setStatus('signedout'); return; }
+          if (changed) linkAccount();
+        });
+        return client.auth.getSession();
+      }).then((res) => {
+        const session = res && res.data && res.data.session;
+        user = session && session.user ? session.user : null;
+        if (user) linkAccount(); else setStatus('signedout');
+      }).catch((err) => setStatus('error', (err && err.message) || 'Couldn’t connect.'));
+    }
+
+    // A new account on this device: upload everything it has, then download the account's data.
+    function linkAccount() {
+      if (meta.userId !== user.id) {
+        meta.userId = user.id;
+        meta.lastPull = {};
+        markAll(true);
+      }
+      saveMeta();
+      syncNow();
+    }
+
+    function bump(kind, id) { meta.pending[kind][id] = (meta.pending[kind][id] || 0) + 1; }
+    function changed(kind, id) {
+      bump(kind, id);
+      delete meta.gone[kind][id];
+      saveMeta();
+      schedule();
+    }
+    function deleted(kind, id) {
+      bump(kind, id);
+      meta.gone[kind][id] = new Date().toISOString();
+      saveMeta();
+      schedule();
+    }
+    function markAll(quiet) {
+      store.entries.forEach((e) => bump('entries', e.id));
+      recipes.list.forEach((r) => bump('recipes', r.id));
+      saveMeta();
+      if (!quiet) schedule();
+    }
+    function schedule() {
+      if (!client || !user) return;
+      clearTimeout(timer);
+      timer = setTimeout(syncNow, 1200);
+    }
+
+    function entryRow(id) {
+      const e = store.entries.find((x) => x.id === id);
+      if (e) return { id: id, user_id: user.id, logged_at: e.timestamp, day: e.date, amount: e.amount, is_addition: e.isAddition, name: e.name, deleted: false, updated_at: e.updatedAt || e.timestamp };
+      if (meta.gone.entries[id]) return { id: id, user_id: user.id, deleted: true, updated_at: meta.gone.entries[id] };
+      return null;
+    }
+    function recipeRow(id) {
+      const r = recipes.list.find((x) => x.id === id);
+      if (r) return { id: id, user_id: user.id, data: r, deleted: false, updated_at: r.updatedAt };
+      if (meta.gone.recipes[id]) return { id: id, user_id: user.id, deleted: true, updated_at: meta.gone.recipes[id] };
+      return null;
+    }
+
+    async function push(kind, table, toRow) {
+      const snapshot = Object.assign({}, meta.pending[kind]);
+      const ids = Object.keys(snapshot);
+      for (let i = 0; i < ids.length; i += 500) {
+        const batch = ids.slice(i, i + 500);
+        const rows = batch.map(toRow).filter(Boolean);
+        if (rows.length) {
+          const { error } = await client.from(table).upsert(rows, { onConflict: 'id' });
+          if (error) throw new Error(error.message || 'Upload failed');
+        }
+        batch.forEach((id) => {
+          if (meta.pending[kind][id] === snapshot[id]) {
+            delete meta.pending[kind][id];
+            delete meta.gone[kind][id];
+          }
+        });
+        saveMeta();
+      }
+    }
+
+    async function pull(kind, table, apply) {
+      // A few seconds of overlap so rows saved at the same moment aren't missed; applying twice is harmless.
+      const since = meta.lastPull[kind] ? new Date(Date.parse(meta.lastPull[kind]) - 5000).toISOString() : null;
+      let newest = meta.lastPull[kind] || null;
+      let changedAny = false;
+      for (let from = 0; ; from += PAGE) {
+        let q = client.from(table).select('*').order('synced_at', { ascending: true }).range(from, from + PAGE - 1);
+        if (since) q = q.gt('synced_at', since);
+        const { data, error } = await q;
+        if (error) throw new Error(error.message || 'Download failed');
+        (data || []).forEach((row) => {
+          if (apply(row)) changedAny = true;
+          if (!newest || row.synced_at > newest) newest = row.synced_at;
+        });
+        if (!data || data.length < PAGE) break;
+      }
+      meta.lastPull[kind] = newest;
+      saveMeta();
+      return changedAny;
+    }
+
+    const newer = (a, b) => Date.parse(a || 0) > Date.parse(b || 0);
+
+    function applyEntry(row) {
+      const index = store.entries.findIndex((e) => e.id === row.id);
+      const local = index >= 0 ? store.entries[index] : null;
+      const localTime = local ? (local.updatedAt || local.timestamp) : meta.gone.entries[row.id];
+      // An unsynced local change that's newer wins; it uploads on the next push.
+      if (meta.pending.entries[row.id] && localTime && !newer(row.updated_at, localTime)) return false;
+      delete meta.pending.entries[row.id];
+      delete meta.gone.entries[row.id];
+      if (row.deleted) {
+        if (index < 0) return false;
+        store.entries.splice(index, 1);
+        return true;
+      }
+      const clean = sanitizeEntry({ id: row.id, timestamp: row.logged_at, date: row.day, amount: Number(row.amount), isAddition: row.is_addition, name: row.name, updatedAt: row.updated_at });
+      if (!clean) return false;
+      if (local && local.updatedAt === clean.updatedAt && local.amount === clean.amount && local.name === clean.name) return false;
+      if (index >= 0) store.entries[index] = clean; else store.entries.push(clean);
+      return true;
+    }
+
+    function applyRecipe(row) {
+      const index = recipes.list.findIndex((r) => r.id === row.id);
+      const local = index >= 0 ? recipes.list[index] : null;
+      const localTime = local ? local.updatedAt : meta.gone.recipes[row.id];
+      if (meta.pending.recipes[row.id] && localTime && !newer(row.updated_at, localTime)) return false;
+      delete meta.pending.recipes[row.id];
+      delete meta.gone.recipes[row.id];
+      if (row.deleted) {
+        if (index < 0) return false;
+        recipes.list.splice(index, 1);
+        return true;
+      }
+      const clean = sanitizeRecipe(Object.assign({}, row.data || {}, { id: row.id, updatedAt: row.updated_at }));
+      if (!clean) return false;
+      if (local && local.updatedAt === clean.updatedAt) return false;
+      if (index >= 0) recipes.list[index] = clean; else recipes.list.push(clean);
+      return true;
+    }
+
+    function syncNow() {
+      if (!client || !user) return Promise.resolve();
+      if (running) { again = true; return running; }
+      setStatus('syncing');
+      running = (async () => {
+        await push('entries', 'pt_entries', entryRow);
+        await push('recipes', 'pt_recipes', recipeRow);
+        const a = await pull('entries', 'pt_entries', applyEntry);
+        const b = await pull('recipes', 'pt_recipes', applyRecipe);
+        if (a) store.save();
+        if (b) recipes.save();
+        if (a || b) render();
+        meta.lastSynced = new Date().toISOString();
+        saveMeta();
+        setStatus('synced');
+      })().catch((err) => {
+        const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+        setStatus('error', offline ? 'You’re offline. Changes will sync when you’re back online.' : (err && err.message) || 'Sync failed.');
+      }).finally(() => {
+        running = null;
+        if (again) { again = false; syncNow(); }
+      });
+      return running;
+    }
+
+    return {
+      start: start,
+      changed: changed,
+      deleted: deleted,
+      markAll: () => markAll(false),
+      syncNow: syncNow,
+      config: config,
+      get status() { return status; },
+      get message() { return message; },
+      get email() { return user && user.email; },
+      get signedIn() { return !!user; },
+      get lastSynced() { return meta.lastSynced || null; },
+      get pendingCount() { return Object.keys(meta.pending.entries).length + Object.keys(meta.pending.recipes).length; },
+      subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+      connect(url, key) {
+        meta.url = url;
+        meta.key = key;
+        saveMeta();
+        return start();
+      },
+      disconnect() {
+        const done = client && user ? client.auth.signOut().catch(() => {}) : Promise.resolve();
+        return done.then(() => {
+          client = null;
+          user = null;
+          delete meta.url;
+          delete meta.key;
+          saveMeta();
+          setStatus('off');
+        });
+      },
+      sendCode(email) {
+        return client.auth.signInWithOtp({ email: email, options: { shouldCreateUser: true, emailRedirectTo: location.origin + location.pathname } })
+          .then(({ error }) => { if (error) throw new Error(error.message); });
+      },
+      verifyCode(email, code) {
+        return client.auth.verifyOtp({ email: email, token: code, type: 'email' })
+          .then(({ data, error }) => {
+            if (error) throw new Error(error.message);
+            if (data && data.user && (!user || user.id !== data.user.id)) { user = data.user; linkAccount(); }
+          });
+      },
+      signOut() {
+        if (!client) return Promise.resolve();
+        return client.auth.signOut().then(() => { user = null; setStatus('signedout'); });
+      }
+    };
+  })();
+
+  // ---------- Backup & Sync screen: cloud section ----------
+
+  function relativeTime(iso) {
+    if (!iso) return '';
+    const secs = Math.round((Date.now() - Date.parse(iso)) / 1000);
+    if (secs < 45) return 'just now';
+    if (secs < 3600) return `${Math.round(secs / 60)} min ago`;
+    return fmt.time.format(new Date(iso));
+  }
+
+  function cloudSection() {
+    const box = el('div', { class: 'cloud-card' });
+    let step = 'email'; // email → code
+    let email = '';
+
+    function draw() {
+      const cfg = cloud.config();
+      const kids = [el('div', { class: 'cloud-title', html: icon('cloud', 20) + '<span>Cloud sync</span>' })];
+      const note = (t) => el('div', { class: 'backup-note', text: t });
+
+      if (!cfg) {
+        const urlInput = el('input', { class: 'search-input', type: 'url', placeholder: 'https://your-project.supabase.co', autocomplete: 'off', autocapitalize: 'off', 'aria-label': 'Supabase project URL' });
+        const keyInput = el('input', { class: 'search-input', type: 'text', placeholder: 'anon public key', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', 'aria-label': 'Supabase anon key' });
+        const err = el('div', { class: 'field-hint' });
+        kids.push(
+          note('Save your log and recipes to your Supabase database and keep every device in sync. Find these in Supabase under Project Settings → API.'),
+          urlInput,
+          keyInput,
+          el('button', {
+            class: 'pill-button wide',
+            text: 'Connect',
+            onclick: () => {
+              const url = urlInput.value.trim().replace(/\/+$/, '');
+              const key = keyInput.value.trim();
+              if (!/^https:\/\/[^\s/]+$/i.test(url)) { err.textContent = 'Enter the project URL, like https://abcd.supabase.co'; return; }
+              if (key.length < 20) { err.textContent = 'Paste the anon public key.'; return; }
+              cloud.connect(url, key);
+            }
+          }),
+          err
+        );
+      } else if (cloud.status === 'connecting') {
+        kids.push(note('Connecting…'));
+      } else if (!cloud.signedIn) {
+        if (cloud.status === 'error') kids.push(el('div', { class: 'cloud-error', text: cloud.message }));
+        const err = el('div', { class: 'field-hint' });
+        if (step === 'email') {
+          const emailInput = el('input', { class: 'search-input', type: 'email', inputmode: 'email', placeholder: 'you@example.com', autocomplete: 'email', autocapitalize: 'off', 'aria-label': 'Email' });
+          emailInput.value = email;
+          const send = el('button', { class: 'pill-button wide', text: 'Email me a sign-in code' });
+          send.addEventListener('click', () => {
+            email = emailInput.value.trim();
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { err.textContent = 'Enter your email address.'; return; }
+            send.disabled = true;
+            err.textContent = 'Sending…';
+            cloud.sendCode(email).then(() => { step = 'code'; draw(); }).catch((e) => { send.disabled = false; err.textContent = e.message; });
+          });
+          kids.push(note('Sign in to sync. Your entries on this device are uploaded and merged with your account.'), emailInput, send, err);
+        } else {
+          const codeInput = el('input', { class: 'search-input', type: 'text', inputmode: 'numeric', autocomplete: 'one-time-code', placeholder: '6-digit code', 'aria-label': 'Sign-in code' });
+          const verify = el('button', { class: 'pill-button wide', text: 'Sign in' });
+          verify.addEventListener('click', () => {
+            const code = codeInput.value.replace(/\s+/g, '');
+            if (!/^\d{6,10}$/.test(code)) { err.textContent = 'Enter the code from the email.'; return; }
+            verify.disabled = true;
+            err.textContent = 'Checking…';
+            cloud.verifyCode(email, code).then(() => { step = 'email'; draw(); }).catch((e) => { verify.disabled = false; err.textContent = e.message; });
+          });
+          kids.push(
+            note(`We sent a code to ${email}. Enter it here. (If the email only has a link, add the code to the Magic Link email template in Supabase; see the README.)`),
+            codeInput, verify, err,
+            el('button', { class: 'text-button', html: '<span>Use a different email</span>', onclick: () => { step = 'email'; draw(); } })
+          );
+        }
+        if (!cfg.builtIn) kids.push(el('button', { class: 'text-button muted', html: '<span>Disconnect this project</span>', onclick: () => cloud.disconnect() }));
+      } else {
+        const state = cloud.status === 'syncing' ? 'Syncing…'
+          : cloud.status === 'error' ? cloud.message
+          : cloud.pendingCount ? `${cloud.pendingCount} ${cloud.pendingCount === 1 ? 'change' : 'changes'} waiting to sync`
+          : cloud.lastSynced ? `Synced ${relativeTime(cloud.lastSynced)}` : 'Synced';
+        kids.push(
+          el('div', { class: 'cloud-account', text: `Signed in as ${cloud.email || 'your account'}` }),
+          el('div', { class: cloud.status === 'error' ? 'cloud-error' : 'backup-note', text: state }),
+          el('div', { class: 'cloud-actions' }, [
+            el('button', { class: 'pill-button', text: 'Sync now', onclick: () => cloud.syncNow() }),
+            el('button', { class: 'text-button muted', html: '<span>Sign out</span>', onclick: () => cloud.signOut() })
+          ])
+        );
+      }
+      box.replaceChildren(...kids);
+    }
+
+    const unsubscribe = cloud.subscribe(() => { if (!box.isConnected) { unsubscribe(); return; } draw(); });
+    draw();
+    return box;
   }
 
   // ---------- Boot ----------
@@ -1943,10 +2451,15 @@
   recipes.load();
   render();
 
+  cloud.start();
+  setInterval(() => { if (document.visibilityState === 'visible') cloud.syncNow(); }, 60000);
+  window.addEventListener('online', () => cloud.syncNow());
+
   // Keep "today" highlighting correct if the app is left open past midnight or resumed later.
   let lastToday = dayKey(new Date());
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
+    cloud.syncNow();
     const nowKey = dayKey(new Date());
     if (nowKey !== lastToday) { lastToday = nowKey; render(); }
   });

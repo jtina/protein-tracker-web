@@ -1,6 +1,6 @@
 // Network-first service worker: always serves the latest version when online,
 // falls back to the cached copy so the app keeps working offline.
-const CACHE = 'protein-tracker-v13';
+const CACHE = 'protein-tracker-v14';
 const SHELL = [
   './',
   'index.html',
