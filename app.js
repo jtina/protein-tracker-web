@@ -2355,6 +2355,7 @@
   // ---------- Backup & restore (web only) ----------
 
   const BACKUP_FORMAT = 'protein-tracker-backup';
+  const APP_VERSION = '18';
 
   function exportBackup() {
     const backup = {
@@ -2512,7 +2513,7 @@
         ]),
         el('button', { class: 'add-protein-button', html: icon('backup', 20) + '<span>Export data</span>', onclick: exportBackup }),
         el('button', { class: 'add-protein-button', html: icon('plus', 18) + '<span>Import data</span>', onclick: () => importBackup(dismiss) }),
-        el('div', { class: 'footnote', text: `${count} ${count === 1 ? 'entry' : 'entries'} and ${recipes.list.length} ${recipes.list.length === 1 ? 'recipe' : 'recipes'} on this device` })
+        el('div', { class: 'footnote', text: `${count} ${count === 1 ? 'entry' : 'entries'} and ${recipes.list.length} ${recipes.list.length === 1 ? 'recipe' : 'recipes'} on this device · app version ${APP_VERSION}` })
       ]);
       return {
         navBar: navBar('Backup & Sync', null, el('button', { class: 'nav-button bold', text: 'Done', onclick: dismiss })),
@@ -2545,6 +2546,8 @@
     let status = 'off'; // off, connecting, signedout, syncing, synced, error
     let message = '';
     let hasPin = null;
+    let pinProblem = '';
+    let started = false;
     let running = null;
     let again = false;
     let timer = null;
@@ -2601,7 +2604,9 @@
       const cfg = config();
       if (!cfg) { setStatus('off'); return Promise.resolve(); }
       setStatus('connecting');
+      const slow = setTimeout(() => { if (status === 'connecting') { started = false; setStatus('error', 'Couldn’t reach Supabase. Check your connection, then close and reopen Backup & Sync.'); } }, 12000);
       return loadLibrary().then((lib) => {
+        clearTimeout(slow);
         client = lib.createClient(cfg.url, cfg.key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey: 'proteinTracker.auth' } });
         client.auth.onAuthStateChange((event, session) => {
           const next = session && session.user ? session.user : null;
@@ -2622,8 +2627,9 @@
     function checkPin() {
       if (!user) return;
       client.rpc('pt_has_pin').then(({ data, error }) => {
-        if (!error) { hasPin = !!data; emit(); }
-      });
+        if (error) { hasPin = false; pinProblem = rpcError(error).message; } else { hasPin = !!data; pinProblem = ''; }
+        emit();
+      }, (err) => { hasPin = false; pinProblem = (err && err.message) || 'Couldn’t check the PIN.'; emit(); });
     }
 
     // A new account on this device: upload everything it has, then download the account's data.
@@ -2814,7 +2820,6 @@
       return new Error(/pt_[a-z_]+|schema cache|does not exist/i.test(msg) ? 'PIN sync isn’t set up in Supabase yet: run supabase/schema.sql in the SQL Editor.' : msg);
     };
 
-    let started = false;
     // Not connected yet (offline when the app opened, say): try again and explain.
     function needClient() {
       if (client) return null;
@@ -2849,6 +2854,7 @@
       get email() { return user && user.email; },
       get connected() { return !!accountId(); },
       get hasPin() { return hasPin; },
+      get pinProblem() { return pinProblem; },
       get lastSynced() { return meta.lastSynced || null; },
       get pendingCount() { return Object.keys(meta.pending.entries).length + Object.keys(meta.pending.recipes).length; },
       subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
@@ -3011,10 +3017,10 @@
           el('div', { class: cloud.status === 'error' ? 'cloud-error' : 'backup-note', text: state })
         );
         if (cloud.mode === 'session') {
-          if (cloud.hasPin === false || editingPin) {
+          if (cloud.hasPin !== true || editingPin) {
             const pin = pinInput('New PIN', 'New PIN (6+ characters)');
             const again = pinInput('Repeat PIN', 'Repeat PIN');
-            const err = el('div', { class: 'field-hint', text: cloud.hasPin ? 'Changing the PIN locks out devices that used the old one.' : 'Set a PIN so your other devices (and the home-screen app) can sync without signing in.' });
+            const err = el('div', { class: cloud.pinProblem ? 'cloud-error' : 'field-hint', text: cloud.pinProblem || (cloud.hasPin ? 'Changing the PIN locks out devices that used the old one.' : 'Set a PIN so your other devices (and the home-screen app) can sync without signing in.') });
             const save = el('button', { class: 'pill-button wide', text: cloud.hasPin ? 'Change PIN' : 'Set PIN' });
             save.addEventListener('click', () => {
               if (pin.value.length < 6) { err.textContent = 'Use at least 6 characters.'; return; }
@@ -3026,7 +3032,7 @@
             kids.push(el('div', { class: 'field-label', text: cloud.hasPin ? 'Change PIN' : 'Set a PIN' }), pin, again, save, err);
           } else if (cloud.hasPin) {
             kids.push(el('div', { class: 'cloud-pin-row' }, [
-              el('span', { class: 'backup-note', text: 'PIN is set. Enter it on other devices to sync.' }),
+              el('span', { class: 'backup-note', text: 'This device is signed in and syncs on its own. Your PIN is set: enter it on other devices (and the home-screen app) to sync.' }),
               el('button', { class: 'text-button', html: '<span>Change</span>', onclick: () => { editingPin = true; draw(); } })
             ]));
           }

@@ -1,6 +1,6 @@
 // Network-first service worker: always serves the latest version when online,
 // falls back to the cached copy so the app keeps working offline.
-const CACHE = 'protein-tracker-v17';
+const CACHE = 'protein-tracker-v18';
 const SHELL = [
   './',
   'index.html',
@@ -30,8 +30,11 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   // Only the app's own files; food searches and other sites go straight to the network.
   if (event.request.method !== 'GET' || new URL(event.request.url).origin !== self.location.origin) return;
+  // Ask the server every time (no stale browser-cached copies), falling back to the saved copy offline.
+  const req = event.request;
+  const fresh = req.mode === 'navigate' ? fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' }) : fetch(req, { cache: 'no-cache' });
   event.respondWith(
-    fetch(event.request)
+    fresh
       .then((response) => {
         const copy = response.clone();
         caches.open(CACHE).then((cache) => cache.put(event.request, copy));
