@@ -13,7 +13,7 @@ It's plain HTML, CSS and JavaScript with no build step and no dependencies.
 - Per-day log: tap a row to **edit** it, or swipe it left to **edit** or **delete** it
 - Accent color picker with 9 colors
 - Data is saved in the browser's `localStorage`, under the same keys the app uses (`proteinTracker.entries`, `accentColor`)
-- **Recipes**: paste a recipe, type ingredients one per line, or upload a recipe text file. The app reads amounts like `1 ½ cups`, `200g`, `2 large eggs` or `1 (15 oz) can`, matches each ingredient against a built-in table of about 170 common foods (typical USDA values), and shows protein and calories per serving and for the whole recipe. Add the cooked weight to see grams per serving and to log by weight. Tap any ingredient to correct it: pick another food, set its weight, search [Open Food Facts](https://world.openfoodfacts.org) for branded products, or type the numbers yourself. **Import from TikTok**: paste a video link and the app fetches its caption through TikTok's public embed endpoint (or paste the caption yourself if TikTok doesn't share it), then strips hashtags and emojis, keeps the ingredient lines, and shows any protein or calories the creator listed next to its own estimate. Log servings of a recipe from the Recipes list, or pick a recipe in the Add protein screen.
+- **Recipes**: paste a recipe, type ingredients one per line, or upload a recipe text file. The app reads amounts like `1 ½ cups`, `200g`, `2 large eggs` or `1 (15 oz) can`, matches each ingredient against a built-in table of about 170 common foods (typical USDA values), and shows protein and calories per serving and for the whole recipe. Add the cooked weight to see grams per serving and to log by weight. Tap any ingredient to correct it: pick another food, set its weight, search [Open Food Facts](https://world.openfoodfacts.org) for branded products, or type the numbers yourself. **Import from link**: paste a recipe website link (the ingredients, servings and any nutrition the site lists are read from the page's recipe data; on a page that lists recipes, pick one) or a TikTok link (its caption is fetched through TikTok's public embed endpoint, then hashtags and emojis are stripped). If a link doesn't work, paste the recipe or caption text instead. Log servings of a recipe from the Recipes list, or pick a recipe in the Add protein screen.
 - **Backup** (arrows button in the header): export all entries and recipes to a JSON file, or import one, either merging it in or replacing everything
 - Installable as a home-screen web app with an offline cache
 
@@ -41,3 +41,13 @@ Entries are saved only in the browser on the device you use (in `localStorage`).
 - Private browsing tabs don't keep anything.
 
 Use **Backup → Export data** regularly and save the file to Files or iCloud Drive. To move your log to another device or browser, export it there and use **Import data**.
+
+## Website import helper (Vercel)
+
+Browsers can't read other websites directly, so recipe websites are fetched by a small serverless function, `api/fetch-page.js`. It only fetches public `http`/`https` pages (no private or local addresses, standard ports only, 10-second timeout, 3 MB limit) and only lets this app's GitHub Pages site call it from another domain.
+
+1. On vercel.com, **Add New → Project**, import `jtina/protein-tracker-web`, keep the defaults (framework: Other, no build command) and **Deploy**.
+2. The whole app also works at the Vercel address, with website import built in.
+3. To turn website import on for the GitHub Pages copy, set `HELPER_ORIGIN` in `app.js` to the Vercel address (e.g. `https://protein-tracker-web.vercel.app`).
+
+Without the helper, website import shows a message and you can paste the recipe text instead. TikTok captions don't use the helper.

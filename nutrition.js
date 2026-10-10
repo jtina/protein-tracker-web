@@ -555,7 +555,67 @@
     return { name: (ex.name || name).replace(/[!.?\s]+$/, ''), servings: ex.servings, text: kept.join('\n'), stated: stated };
   }
 
-  const api = { FOODS, FOOD_BY_ID, parseLine, matchFood, analyzeLine, analyzeRecipe, extractRecipe, extractFromCaption, lineKey, normalize, fromOpenFoodFacts };
+  const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', frac12: '½', frac14: '¼', frac34: '¾', frac13: '⅓', frac23: '⅔', frac18: '⅛', deg: '°', ndash: '–', mdash: '—', rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“', hellip: '…', eacute: 'é', ntilde: 'ñ' };
+  function decodeEntities(s) {
+    return String(s == null ? '' : s)
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+      .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(+d))
+      .replace(/&([a-z0-9]+);/gi, (m, n) => (ENTITIES[n.toLowerCase()] !== undefined ? ENTITIES[n.toLowerCase()] : m))
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function firstNumber(v) {
+    const list = Array.isArray(v) ? v : [v];
+    for (const x of list) {
+      const m = String(x == null ? '' : x).match(/\d+(?:[.,]\d+)?/);
+      if (m) return parseFloat(m[0].replace(',', '.'));
+    }
+    return null;
+  }
+
+  /** Finds a schema.org Recipe among parsed JSON-LD blocks (handles @graph and nested arrays). */
+  function findRecipeNode(data) {
+    const stack = Array.isArray(data) ? data.slice() : [data];
+    while (stack.length) {
+      const node = stack.shift();
+      if (!node || typeof node !== 'object') continue;
+      if (Array.isArray(node)) { stack.push(...node); continue; }
+      const type = node['@type'];
+      const types = Array.isArray(type) ? type : [type];
+      if (types.some((t) => /(^|\/)Recipe$/i.test(String(t || '')))) return node;
+      if (node['@graph']) stack.push(node['@graph']);
+      if (node.mainEntity) stack.push(node.mainEntity);
+      if (node.itemListElement) stack.push(node.itemListElement);
+      if (node.item) stack.push(node.item);
+    }
+    return null;
+  }
+
+  /** A schema.org Recipe → { name, servings, text, stated } like the other importers. */
+  function recipeFromSchema(node) {
+    if (!node) return null;
+    let ingredients = node.recipeIngredient || node.ingredients || [];
+    if (!Array.isArray(ingredients)) ingredients = [ingredients];
+    const lines = ingredients.map(decodeEntities).filter(Boolean);
+    if (!lines.length) return null;
+    const n = node.nutrition || {};
+    const stated = {};
+    const protein = firstNumber(n.proteinContent);
+    const kcal = firstNumber(n.calories);
+    if (protein > 0) stated.protein = protein;
+    if (kcal > 0) stated.kcal = kcal;
+    const servings = firstNumber(node.recipeYield);
+    return {
+      name: decodeEntities(node.name || node.headline || '').slice(0, 80),
+      servings: servings > 0 && servings <= 100 ? servings : null,
+      text: lines.join('\n'),
+      stated: stated
+    };
+  }
+
+  const api = { FOODS, FOOD_BY_ID, parseLine, matchFood, analyzeLine, analyzeRecipe, extractRecipe, extractFromCaption, findRecipeNode, recipeFromSchema, decodeEntities, lineKey, normalize, fromOpenFoodFacts };
   root.PTNutrition = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof self !== 'undefined' ? self : this);

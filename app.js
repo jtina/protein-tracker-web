@@ -992,7 +992,7 @@
             onclick: () => pickTextFile((text) => openRecipeEditor(null, renderList, N.extractRecipe(text)))
           })
         ]),
-        el('button', { class: 'add-protein-button', html: icon('video', 20) + '<span>Import from TikTok</span>', onclick: () => openCaptionImport(renderList) }),
+        el('button', { class: 'add-protein-button', html: icon('link', 20) + '<span>Import from link</span>', onclick: () => openLinkImport(renderList) }),
         list
       ]);
       return {
@@ -1018,76 +1018,209 @@
     input.click();
   }
 
-  // ---------- Import a recipe from a TikTok caption ----------
+  // ---------- Import a recipe from a link (TikTok caption or recipe website) ----------
+
+  // Websites are fetched by the app's helper (api/fetch-page.js, a Vercel function), since
+  // browsers can't read other sites directly. Hosted on Vercel, the app uses its own helper.
+  // For the GitHub Pages copy, set this to the Vercel deployment, e.g. 'https://name.vercel.app'.
+  const HELPER_ORIGIN = '';
+
+  function pageFetcherUrl() {
+    if (/\.github\.io$/i.test(location.hostname)) return HELPER_ORIGIN ? HELPER_ORIGIN.replace(/\/+$/, '') + '/api/fetch-page' : null;
+    return '/api/fetch-page';
+  }
+
+  function timedFetch(url) {
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = setTimeout(() => ctrl && ctrl.abort(), 15000);
+    return fetch(url, ctrl ? { signal: ctrl.signal } : undefined).finally(() => clearTimeout(timer));
+  }
 
   // TikTok's public oEmbed endpoint returns a video's caption as "title".
   function fetchTikTokCaption(link) {
-    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timer = setTimeout(() => ctrl && ctrl.abort(), 12000);
-    return fetch('https://www.tiktok.com/oembed?url=' + encodeURIComponent(link), ctrl ? { signal: ctrl.signal } : undefined)
+    return timedFetch('https://www.tiktok.com/oembed?url=' + encodeURIComponent(link))
       .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then((data) => {
         const caption = data && typeof data.title === 'string' ? data.title.trim() : '';
         if (!caption) throw new Error('No caption');
         return { caption: caption, author: data.author_name || '' };
-      })
-      .finally(() => clearTimeout(timer));
+      });
   }
 
-  function openCaptionImport(onSaved) {
+  function fetchPage(link) {
+    const helper = pageFetcherUrl();
+    if (!helper) return Promise.reject(new Error('nohelper'));
+    return timedFetch(helper + '?url=' + encodeURIComponent(link))
+      .then((r) => r.json().catch(() => ({})).then((data) => {
+        if (!r.ok || typeof data.html !== 'string') throw new Error(data.error || 'Couldn’t load that page.');
+        return data;
+      }));
+  }
+
+  const NOT_RECIPE_PATH = /\/(category|categories|tag|tags|page|author|about|contact|privacy|terms|shop|store|search|feed|cart|account|login|wp-[a-z-]+|recipe-index|recipes|subscribe|newsletter|cookbook|faq)(\/|$)/i;
+
+  /** A fetched page → { recipe } when it holds one, or { links } to recipes it lists. */
+  function readRecipePage(html, pageUrl) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const text = (node) => (node ? node.textContent.replace(/\s+/g, ' ').trim() : '');
+
+    // 1. schema.org Recipe data (most recipe sites, e.g. WordPress recipe plugins).
+    for (const script of doc.querySelectorAll('script[type="application/ld+json"]')) {
+      let data = null;
+      try { data = JSON.parse(script.textContent.trim().replace(/;\s*$/, '')); } catch (_) { continue; }
+      const recipe = N.recipeFromSchema(N.findRecipeNode(data));
+      if (recipe) return { recipe: recipe };
+    }
+
+    // 2. Recipe card markup without that data.
+    const items = Array.from(doc.querySelectorAll('[itemprop="recipeIngredient"], [itemprop="ingredients"], .wprm-recipe-ingredient, .tasty-recipes-ingredients li, .mv-create-ingredients li, .recipe-ingredients li, .ingredients li'))
+      .map(text).filter(Boolean);
+    if (items.length >= 2) {
+      const metaTitle = doc.querySelector('meta[property="og:title"]');
+      const yieldNode = doc.querySelector('[itemprop="recipeYield"], .wprm-recipe-servings, .tasty-recipes-yield');
+      const servings = parseFloat((text(yieldNode).match(/\d+(?:\.\d+)?/) || [])[0]);
+      return {
+        recipe: {
+          name: (text(doc.querySelector('h1')) || (metaTitle && metaTitle.getAttribute('content')) || '').slice(0, 80),
+          servings: servings > 0 ? servings : null,
+          text: Array.from(new Set(items)).join('\n'),
+          stated: {}
+        }
+      };
+    }
+
+    // 3. A list page: collect links to posts on the same site.
+    let base;
+    try { base = new URL(pageUrl); } catch (_) { return null; }
+    const host = base.hostname.replace(/^www\./, '');
+    const found = new Map();
+    doc.querySelectorAll('a[href]').forEach((a, order) => {
+      let u;
+      try { u = new URL(a.getAttribute('href'), base); } catch (_) { return; }
+      if (!/^https?:$/.test(u.protocol) || u.hostname.replace(/^www\./, '') !== host) return;
+      u.hash = '';
+      u.search = '';
+      const path = u.pathname.replace(/\/+$/, '');
+      if (path.length < 4 || NOT_RECIPE_PATH.test(path + '/') || /\.(jpe?g|png|gif|webp|pdf|xml)$/i.test(path)) return;
+      if (u.toString().replace(/\/+$/, '') === base.toString().replace(/[?#].*$/, '').replace(/\/+$/, '')) return;
+      const img = a.querySelector('img');
+      const title = (text(a) || (img && img.getAttribute('alt')) || a.getAttribute('title') || '').replace(/\s+/g, ' ').trim();
+      if (title.length < 4 || /^(read more|continue reading|get the recipe|jump to recipe|view recipe|see more|next|previous|older|newer)\b/i.test(title)) {
+        if (!found.has(u.toString())) return;
+      }
+      const inHeading = !!a.closest('h1, h2, h3, h4, article, .entry-title, .post-title');
+      const prev = found.get(u.toString());
+      if (!prev) found.set(u.toString(), { url: u.toString(), title: title, score: inHeading ? 2 : img ? 1 : 0, order: order });
+      else {
+        if (title.length > prev.title.length && title.length < 120) prev.title = title;
+        prev.score = Math.max(prev.score, inHeading ? 2 : img ? 1 : 0);
+      }
+    });
+    const links = Array.from(found.values())
+      .filter((l) => l.score > 0 && l.title.length >= 4)
+      .sort((a, b) => b.score - a.score || a.order - b.order)
+      .slice(0, 40)
+      .sort((a, b) => a.order - b.order);
+    return links.length >= 2 ? { links: links } : null;
+  }
+
+  function openLinkImport(onSaved) {
     present('sheet', (dismiss) => {
-      const linkInput = el('input', { class: 'search-input', type: 'url', inputmode: 'url', placeholder: 'https://www.tiktok.com/…', autocomplete: 'off', autocapitalize: 'off', 'aria-label': 'TikTok link' });
-      const captionInput = el('textarea', { class: 'recipe-text', rows: '6', 'aria-label': 'Caption', placeholder: 'The caption shows up here. You can also paste it yourself.' });
+      const linkInput = el('input', { class: 'search-input', type: 'url', inputmode: 'url', placeholder: 'Recipe website or TikTok link', autocomplete: 'off', autocapitalize: 'off', 'aria-label': 'Link' });
+      const getButton = el('button', { class: 'pill-button', text: 'Get recipe' });
       const status = el('div', { class: 'field-hint' });
-      const getButton = el('button', { class: 'pill-button', text: 'Get caption' });
+      const results = el('div', { class: 'food-results' });
+      const pasteInput = el('textarea', { class: 'recipe-text', rows: '6', 'aria-label': 'Recipe text', placeholder: 'A TikTok caption shows up here. If a link doesn’t work, paste the recipe or caption here instead.' });
       const make = el('button', { class: 'confirm-button', text: 'Make recipe' });
       make.style.background = 'var(--accent)';
-      const refresh = () => { make.disabled = !captionInput.value.trim(); };
+      const refresh = () => { make.disabled = !pasteInput.value.trim(); };
 
       const isTikTok = (v) => /^https?:\/\/([a-z0-9-]+\.)*tiktok\.com\//i.test(v.trim());
-      function getCaption() {
+      const isLink = (v) => /^https?:\/\/[^\s/]+\.[^\s/]+/i.test(v.trim());
+      let source = null;
+
+      const openEditor = (preset) => {
+        dismiss();
+        openRecipeEditor(null, onSaved, preset);
+      };
+
+      function loadWebsite(link) {
+        status.textContent = 'Loading the page…';
+        results.replaceChildren();
+        getButton.disabled = true;
+        fetchPage(link)
+          .then((page) => {
+            const found = readRecipePage(page.html, page.url || link);
+            if (found && found.recipe) {
+              openEditor(Object.assign({}, found.recipe, { source: page.url || link }));
+              return;
+            }
+            if (found && found.links) {
+              status.textContent = `This page lists ${found.links.length} recipes. Pick one:`;
+              results.replaceChildren(...found.links.map((l) => el('button', {
+                class: 'food-result',
+                onclick: () => { linkInput.value = l.url; loadWebsite(l.url); }
+              }, [
+                el('span', { class: 'food-name', text: l.title }),
+                el('span', { class: 'food-per', text: l.url.replace(/^https?:\/\/(www\.)?/, '') })
+              ])));
+              return;
+            }
+            status.textContent = 'No recipe found on that page. Copy the ingredient list from the site and paste it below.';
+          })
+          .catch((err) => {
+            status.textContent = err && err.message === 'nohelper'
+              ? 'Website import isn’t switched on for this copy of the app yet. Copy the ingredient list from the site and paste it below.'
+              : `${(err && err.message) || 'Couldn’t load that page.'} You can copy the ingredient list from the site and paste it below.`;
+          })
+          .finally(() => { getButton.disabled = false; });
+      }
+
+      function getRecipe() {
         const link = linkInput.value.trim();
-        if (!isTikTok(link)) {
-          status.textContent = 'Paste a link that starts with https://www.tiktok.com/ (in TikTok: Share → Copy link).';
+        if (!isLink(link)) {
+          status.textContent = 'Paste a full link, starting with https://';
           return;
         }
+        source = link.replace(/^http:/, 'https:');
+        if (!isTikTok(link)) { loadWebsite(link); return; }
         status.textContent = 'Getting the caption…';
+        results.replaceChildren();
         getButton.disabled = true;
         fetchTikTokCaption(link)
           .then((res) => {
-            captionInput.value = res.caption;
-            status.textContent = res.author ? `Caption from ${res.author}.` : 'Got the caption.';
+            pasteInput.value = res.caption;
+            status.textContent = res.author ? `Caption from ${res.author}. Check it, then tap Make recipe.` : 'Got the caption. Check it, then tap Make recipe.';
             refresh();
           })
           .catch(() => {
             status.textContent = 'TikTok didn’t share the caption with this app. Open the video, copy the caption (or type the ingredients), and paste it below.';
-            captionInput.focus({ preventScroll: true });
+            pasteInput.focus({ preventScroll: true });
           })
           .finally(() => { getButton.disabled = false; });
       }
-      getButton.addEventListener('click', getCaption);
-      linkInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') getCaption(); });
-      linkInput.addEventListener('paste', () => setTimeout(() => { if (isTikTok(linkInput.value)) getCaption(); }, 0));
-      captionInput.addEventListener('input', refresh);
+
+      getButton.addEventListener('click', getRecipe);
+      linkInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') getRecipe(); });
+      linkInput.addEventListener('paste', () => setTimeout(() => { if (isLink(linkInput.value)) getRecipe(); }, 0));
+      pasteInput.addEventListener('input', refresh);
 
       const pasteButton = navigator.clipboard && navigator.clipboard.readText ? el('button', {
         class: 'text-button',
         html: '<span>Paste link</span>',
         onclick: () => navigator.clipboard.readText().then((t) => {
           linkInput.value = String(t || '').trim();
-          if (isTikTok(linkInput.value)) getCaption();
+          if (isLink(linkInput.value)) getRecipe();
         }).catch(() => linkInput.focus())
       }) : null;
 
       make.addEventListener('click', () => {
-        const ex = N.extractFromCaption(captionInput.value);
-        const link = linkInput.value.trim();
-        dismiss();
-        openRecipeEditor(null, onSaved, {
+        const ex = N.extractFromCaption(pasteInput.value);
+        openEditor({
           name: ex.name,
           servings: ex.servings,
-          text: ex.text || captionInput.value.trim(),
-          source: isTikTok(link) ? link.replace(/^http:/, 'https:') : null,
+          text: ex.text || pasteInput.value.trim(),
+          source: source && isLink(source) ? source : null,
           stated: ex.stated
         });
       });
@@ -1095,16 +1228,17 @@
 
       const body = el('div', { class: 'accent-sheet fix-sheet' }, [
         el('div', {}, [
-          el('div', { class: 'field-row' }, [el('div', { class: 'field-label', text: 'TikTok link' }), pasteButton]),
+          el('div', { class: 'field-row' }, [el('div', { class: 'field-label', text: 'Link' }), pasteButton]),
           el('div', { class: 'inline-form' }, [linkInput, getButton]),
-          status
+          status,
+          results
         ]),
-        el('div', {}, [el('div', { class: 'field-label', text: 'Caption' }), captionInput]),
+        el('div', {}, [el('div', { class: 'field-label', text: 'Caption or recipe text' }), pasteInput]),
         make,
-        el('div', { class: 'footnote', text: 'Hashtags, emojis and chatter are removed, and ingredient lines are kept. Recipes that only appear in the video itself need to be typed in.' })
+        el('div', { class: 'footnote', text: 'Recipe sites: the ingredient list, servings and any listed nutrition are read from the page. TikTok: hashtags, emojis and chatter are removed from the caption. Recipes that only appear in a video need to be typed in.' })
       ]);
       return {
-        navBar: navBar('From TikTok', null, el('button', { class: 'nav-button bold', text: 'Cancel', onclick: dismiss })),
+        navBar: navBar('Import from Link', null, el('button', { class: 'nav-button bold', text: 'Cancel', onclick: dismiss })),
         body: body,
         onShow: () => linkInput.focus({ preventScroll: true })
       };
@@ -1181,7 +1315,7 @@
             `Whole recipe: ${formatGrams(a.total.protein)}g protein · ${formatKcal(a.total.kcal)} kcal · ${fmt.editAmount.format(a.servings)} ${a.servings === 1 ? 'serving' : 'servings'}` +
             (per.grams ? ` · about ${formatGrams(per.grams)} g each` : '') }),
           draft.stated ? el('div', { class: 'summary-sub stated', text:
-            'The caption says ' + [draft.stated.protein ? `${formatGrams(draft.stated.protein)}g protein` : '', draft.stated.kcal ? `${formatKcal(draft.stated.kcal)} kcal` : ''].filter(Boolean).join(' · ') +
+            (draft.source && /tiktok\.com/i.test(draft.source) ? 'The caption says ' : 'The recipe lists ') + [draft.stated.protein ? `${formatGrams(draft.stated.protein)}g protein` : '', draft.stated.kcal ? `${formatKcal(draft.stated.kcal)} kcal` : ''].filter(Boolean).join(' · ') +
             '. Compare it with the estimate above; check the servings if they’re far apart.' }) : null,
           a.issues ? el('div', { class: 'summary-warn', html: icon('warn', 15) + `<span>${a.issues} ${a.issues === 1 ? 'ingredient isn’t' : 'ingredients aren’t'} counted yet. Tap ${a.issues === 1 ? 'it' : 'them'} below to fix.</span>` }) : null
         ].filter(Boolean));
