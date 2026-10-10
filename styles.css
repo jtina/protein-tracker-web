@@ -710,3 +710,34 @@ svg.icon { display: block; flex-shrink: 0; }
 .text-button.muted { color: var(--secondary); margin-bottom: 0; align-self: flex-start; }
 .cloud-actions .text-button { margin-bottom: 0; }
 .tag-chips-inline { display: contents; }
+
+/* Package scanning */
+.scan-sheet { padding: 0 20px; display: flex; flex-direction: column; gap: 16px; }
+.scan-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  max-height: 56vh;
+  border-radius: 20px;
+  overflow: hidden;
+  background: #111;
+}
+.scan-video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.scan-guide {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: 34%;
+  bottom: 34%;
+  border: 3px solid var(--accent);
+  border-radius: 14px;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.35);
+}
+.scan-status { font-size: 15px; color: var(--secondary); text-align: center; line-height: 1.4; }
+.product-title { font-size: 26px; text-align: center; }
+.product-facts { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--secondary); text-align: center; }
+.segmented { display: flex; gap: 4px; padding: 3px; border-radius: 12px; background: rgba(255, 255, 255, 0.07); }
+.segmented:empty { display: none; }
+.segment { flex: 1; padding: 9px 0; border-radius: 9px; font-size: 15px; font-weight: 600; color: var(--secondary); }
+.segment.on { color: var(--label); background: rgba(255, 255, 255, 0.14); }
+.recent-packages { margin-top: 10px; }

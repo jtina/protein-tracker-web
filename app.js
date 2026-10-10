@@ -351,6 +351,8 @@
       case 'video': return stroke('<rect x="3" y="5.5" width="13" height="13" rx="3"/><path d="M16 10.5 21 7.5v9l-5-3"/>', 2);
       case 'link': return stroke('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>', 2);
       case 'cloud': return stroke('<path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.6 9.1 4.75 4.75 0 0 0 7 18.5z"/>', 2);
+      case 'barcode': return stroke('<path d="M4 7V5.5A1.5 1.5 0 0 1 5.5 4H7M17 4h1.5A1.5 1.5 0 0 1 20 5.5V7M20 17v1.5a1.5 1.5 0 0 1-1.5 1.5H17M7 20H5.5A1.5 1.5 0 0 1 4 18.5V17"/><path d="M7.5 8v8M10.5 8v8M13 8v8M16.5 8v8"/>', 2);
+      case 'camera': return stroke('<path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.8l1.4-2h4.6l1.4 2h1.8A2.5 2.5 0 0 1 20 8.5v8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.5"/>', 2);
       case 'palette': return `<svg class="icon" width="${s}" height="${s}" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M12 2.5C6.5 2.5 2.5 6.6 2.5 11.7c0 5.2 4.2 9.8 9.3 9.8 1.6 0 2.4-.9 2.4-2 0-.6-.2-1-.5-1.4-.3-.4-.5-.8-.5-1.3 0-1 .8-1.7 1.8-1.7h2.2c2.8 0 4.8-2 4.8-4.8C22 6.6 17.6 2.5 12 2.5zM6.8 13.2a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4zm2.6-4.6a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4zm5.2 0a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4zm3.2 3.9a1.7 1.7 0 1 1 0-3.4 1.7 1.7 0 0 1 0 3.4z"/></svg>`;
     }
     return '';
@@ -986,6 +988,14 @@
           foodInput,
           foodResult
         ]) : null,
+        isAdd ? el('div', {}, [
+          el('button', { class: 'add-protein-button compact', html: icon('barcode', 20) + '<span>Scan a package</span>', onclick: () => scanPackage({ onLog: dismiss }) }),
+          products.list.length ? el('div', { class: 'recipe-chips recent-packages' }, products.list.slice(0, 8).map((pr) => el('button', {
+            class: 'recipe-chip',
+            text: pr.name + (pr.pServing != null ? ` · ${formatGrams(pr.pServing)}g` : ''),
+            onclick: () => openProduct(pr, { onLog: dismiss })
+          }))) : null
+        ]) : null,
         el('div', { class: 'amount-block' }, [amountInput, el('div', { class: 'grams-label', text: 'grams' })]),
         el('div', {
           class: 'current-total',
@@ -1416,6 +1426,391 @@
     });
   }
 
+  // ---------- Scan a package (barcode → Open Food Facts) ----------
+
+  // Barcode reading uses zxing-wasm, bundled in vendor/ and loaded on first use.
+  let zxingReady = null;
+  function loadZxing() {
+    if (!zxingReady) {
+      zxingReady = new Promise((resolve, reject) => {
+        const done = () => {
+          const Z = window.ZXingWASM;
+          if (!Z) { reject(new Error('Scanner missing')); return; }
+          Z.prepareZXingModule({
+            overrides: { locateFile: (path, prefix) => (path.endsWith('.wasm') ? new URL('vendor/' + path, location.href).href : prefix + path) },
+            fireImmediately: true
+          });
+          resolve(Z);
+        };
+        if (window.ZXingWASM) { done(); return; }
+        const script = document.createElement('script');
+        script.src = 'vendor/zxing-reader.js';
+        script.onload = done;
+        script.onerror = () => { zxingReady = null; reject(new Error('Couldn’t load the scanner.')); };
+        document.head.appendChild(script);
+      });
+    }
+    return zxingReady;
+  }
+
+  const RETAIL = ['EAN13', 'EAN8', 'UPCA', 'UPCE'];
+  function decodeBarcode(source) {
+    return loadZxing()
+      .then((Z) => Z.readBarcodes(source, { formats: RETAIL, tryHarder: true, maxNumberOfSymbols: 1 }))
+      .then((results) => {
+        const hit = (results || []).find((r) => r.isValid !== false && /^\d{8,14}$/.test(String(r.text || '')));
+        return hit ? String(hit.text) : null;
+      });
+  }
+
+  // Products scanned (or typed in) before, newest first, so they're instant next time.
+  const PRODUCTS_KEY = 'proteinTracker.products';
+  const products = {
+    list: (() => {
+      try {
+        const raw = JSON.parse(storageGet(PRODUCTS_KEY) || '[]');
+        return Array.isArray(raw) ? raw.filter((p) => p && p.code && p.name) : [];
+      } catch (_) { return []; }
+    })(),
+    find(code) { return this.list.find((p) => sameBarcode(p.code, code)) || null; },
+    remember(product) {
+      this.list = [Object.assign({}, product, { at: Date.now() })].concat(this.list.filter((p) => !sameBarcode(p.code, product.code))).slice(0, 30);
+      storageSet(PRODUCTS_KEY, JSON.stringify(this.list));
+    }
+  };
+  // UPC-A "012345678905" and EAN-13 "0012345678905" are the same product.
+  function sameBarcode(a, b) {
+    const n = (c) => String(c || '').replace(/^0+/, '');
+    return n(a) === n(b);
+  }
+
+  function round1(v) { return Math.round(v * 10) / 10; }
+
+  function productFromOpenFoodFacts(code, prod) {
+    const n = (prod && prod.nutriments) || {};
+    const num = (v) => (v === '' || v == null || !Number.isFinite(+v) ? null : +v);
+    let p100 = num(n.proteins_100g);
+    let c100 = num(n['energy-kcal_100g']);
+    if (c100 == null && num(n.energy_100g) != null) c100 = num(n.energy_100g) / 4.184;
+    const servingG = num(prod.serving_quantity) > 0 ? num(prod.serving_quantity) : null;
+    let pServing = num(n.proteins_serving);
+    let cServing = num(n['energy-kcal_serving']);
+    if (pServing == null && p100 != null && servingG) pServing = (p100 * servingG) / 100;
+    if (cServing == null && c100 != null && servingG) cServing = (c100 * servingG) / 100;
+    if (p100 == null && pServing != null && servingG) p100 = (pServing / servingG) * 100;
+    if (c100 == null && cServing != null && servingG) c100 = (cServing / servingG) * 100;
+    const name = String(prod.product_name || prod.generic_name || '').trim();
+    return {
+      code: code,
+      name: (name || 'Product ' + code).slice(0, 80),
+      brand: String(prod.brands || '').split(',')[0].trim().slice(0, 60),
+      servingG: servingG,
+      servingLabel: String(prod.serving_size || '').slice(0, 40),
+      p100: p100 == null ? null : round1(p100),
+      c100: c100 == null ? null : Math.round(c100),
+      pServing: pServing == null ? null : round1(pServing),
+      cServing: cServing == null ? null : Math.round(cServing),
+      source: 'off'
+    };
+  }
+
+  function lookupProduct(code) {
+    const known = products.find(code);
+    if (known) return Promise.resolve(known);
+    const tries = [code];
+    if (code.length === 12) tries.push('0' + code);
+    if (code.length === 13 && code[0] === '0') tries.push(code.slice(1));
+    const fields = 'product_name,generic_name,brands,nutriments,serving_size,serving_quantity';
+    const next = (i) => {
+      if (i >= tries.length) return Promise.resolve(null);
+      return timedFetch(`https://world.openfoodfacts.org/api/v2/product/${tries[i]}.json?fields=${fields}`)
+        .then((r) => (r.ok || r.status === 404 ? r.json() : Promise.reject(new Error('Open Food Facts answered ' + r.status))))
+        .then((data) => (data && data.status === 1 && data.product ? productFromOpenFoodFacts(code, data.product) : next(i + 1)));
+    };
+    return next(0);
+  }
+
+  /** Full-screen camera that reads a barcode, with photo and typing fallbacks. */
+  function openScanner(onCode) {
+    present('cover', (dismiss) => {
+      const video = el('video', { class: 'scan-video', playsinline: true, muted: true, autoplay: true });
+      video.muted = true;
+      const status = el('div', { class: 'scan-status', text: 'Starting the camera…' });
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      let stream = null;
+      let stopped = false;
+      let busy = false;
+      let timer = null;
+
+      function stop() {
+        stopped = true;
+        clearTimeout(timer);
+        if (stream) stream.getTracks().forEach((t) => t.stop());
+        stream = null;
+      }
+      function finish(code) {
+        if (stopped) return;
+        stop();
+        if (navigator.vibrate) { try { navigator.vibrate(40); } catch (_) { /* ignore */ } }
+        dismiss();
+        onCode(code);
+      }
+      const close = () => { stop(); dismiss(); };
+
+      function scanFrame() {
+        if (stopped) return;
+        if (busy || video.readyState < 2 || !video.videoWidth) { timer = setTimeout(scanFrame, 150); return; }
+        // Read the middle band of the picture, where the guide box is.
+        const vw = video.videoWidth;
+        const vh = video.videoHeight;
+        const cw = Math.round(vw * 0.9);
+        const ch = Math.round(Math.min(vh * 0.5, cw * 0.6));
+        const scale = Math.min(1, 1280 / cw);
+        canvas.width = Math.round(cw * scale);
+        canvas.height = Math.round(ch * scale);
+        ctx.drawImage(video, (vw - cw) / 2, (vh - ch) / 2, cw, ch, 0, 0, canvas.width, canvas.height);
+        busy = true;
+        decodeBarcode(ctx.getImageData(0, 0, canvas.width, canvas.height))
+          .then((code) => { if (code) finish(code); })
+          .catch(() => {})
+          .finally(() => { busy = false; if (!stopped) timer = setTimeout(scanFrame, 120); });
+      }
+
+      function startCamera() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          status.textContent = 'This browser can’t use the camera here. Take a photo of the barcode or type it in below.';
+          return;
+        }
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false })
+          .then((s) => {
+            if (stopped) { s.getTracks().forEach((t) => t.stop()); return; }
+            stream = s;
+            video.srcObject = s;
+            return video.play().catch(() => {}).then(() => {
+              status.textContent = 'Point the camera at the barcode.';
+              loadZxing().catch((e) => { status.textContent = e.message; });
+              scanFrame();
+            });
+          })
+          .catch(() => {
+            status.textContent = 'Camera not available. Allow camera access for this site in Settings, or take a photo of the barcode instead.';
+          });
+      }
+
+      const photo = el('input', { type: 'file', accept: 'image/*', capture: 'environment' });
+      photo.style.display = 'none';
+      photo.addEventListener('change', () => {
+        const file = photo.files && photo.files[0];
+        photo.value = '';
+        if (!file) return;
+        status.textContent = 'Reading the photo…';
+        decodeBarcode(file)
+          .then((code) => { if (code) finish(code); else status.textContent = 'No barcode found in that photo. Try again closer, with the barcode flat and in focus.'; })
+          .catch((e) => { status.textContent = (e && e.message) || 'Couldn’t read that photo.'; });
+      });
+
+      const typed = el('input', { class: 'search-input', type: 'text', inputmode: 'numeric', placeholder: 'Barcode number', autocomplete: 'off', 'aria-label': 'Barcode number' });
+      const useTyped = () => {
+        const code = typed.value.replace(/\D/g, '');
+        if (code.length < 8 || code.length > 14) { status.textContent = 'Barcodes have 8 to 14 digits.'; return; }
+        finish(code);
+      };
+      typed.addEventListener('keydown', (e) => { if (e.key === 'Enter') useTyped(); });
+
+      const body = el('div', { class: 'scan-sheet' }, [
+        el('div', { class: 'scan-frame' }, [video, el('div', { class: 'scan-guide' })]),
+        status,
+        el('button', { class: 'add-protein-button', html: icon('camera', 20) + '<span>Take a photo instead</span>', onclick: () => photo.click() }),
+        el('div', { class: 'inline-form' }, [typed, el('button', { class: 'pill-button', text: 'Look up', onclick: useTyped })]),
+        photo
+      ]);
+      setTimeout(startCamera, 50);
+      return {
+        navBar: navBar('Scan a Package', el('button', { class: 'nav-button', text: 'Cancel', onclick: close })),
+        body: body
+      };
+    });
+  }
+
+  /** Scan → look up → product screen. opts.onLog(product, protein) logs; opts.onUse(product) uses it as an ingredient. */
+  function scanPackage(opts) {
+    openScanner((code) => showProductFor(code, opts));
+  }
+
+  function showProductFor(code, opts) {
+    const wait = el('div', { class: 'scan-status', text: `Looking up ${code}…` });
+    let closeWait = null;
+    present('sheet', (dismiss) => {
+      closeWait = dismiss;
+      return { navBar: navBar('Package', null, el('button', { class: 'nav-button bold', text: 'Cancel', onclick: dismiss })), body: el('div', { class: 'accent-sheet' }, [wait]) };
+    });
+    lookupProduct(code)
+      .then((product) => {
+        closeWait();
+        if (product && product.p100 != null) openProduct(product, opts);
+        else openProductLabel(code, product, opts);
+      })
+      .catch(() => {
+        wait.textContent = 'Couldn’t reach Open Food Facts. Check your connection, or enter the label yourself.';
+        wait.after(el('button', { class: 'add-protein-button', text: 'Enter the label', onclick: () => { closeWait(); openProductLabel(code, null, opts); } }));
+      });
+  }
+
+  /** Not found (or no protein listed): type the label once; it's remembered for this barcode. */
+  function openProductLabel(code, found, opts) {
+    present('sheet', (dismiss) => {
+      const name = el('input', { class: 'name-input', type: 'text', placeholder: 'Product name', autocapitalize: 'words', autocomplete: 'off', 'aria-label': 'Product name' });
+      name.value = found ? found.name : '';
+      const g = el('input', { class: 'small-input', type: 'text', inputmode: 'decimal', placeholder: 'Serving g', autocomplete: 'off', 'aria-label': 'Serving size in grams' });
+      if (found && found.servingG) g.value = fmt.editAmount.format(found.servingG);
+      const p = el('input', { class: 'small-input', type: 'text', inputmode: 'decimal', placeholder: 'Protein g', autocomplete: 'off', 'aria-label': 'Protein per serving' });
+      const c = el('input', { class: 'small-input', type: 'text', inputmode: 'decimal', placeholder: 'kcal', autocomplete: 'off', 'aria-label': 'Calories per serving' });
+      const hint = el('div', { class: 'field-hint', text: 'From the Nutrition Facts panel, per serving. For a 4 oz serving, enter 113 g.' });
+      const save = el('button', { class: 'confirm-button', text: 'Continue' });
+      save.style.background = 'var(--accent)';
+      save.addEventListener('click', () => {
+        const sg = parseAmount(g.value, true);
+        const sp = parseAmount(p.value || '0', true);
+        const sc = parseAmount(c.value || '0', true);
+        if (!name.value.trim()) { hint.textContent = 'Add the product name.'; return; }
+        if (!(sg > 0) || sp === null || sc === null || sp < 0 || sc < 0) { hint.textContent = 'Enter the serving size in grams, plus its protein and calories.'; return; }
+        const product = {
+          code: code,
+          name: name.value.trim().slice(0, 80),
+          brand: found ? found.brand : '',
+          servingG: sg,
+          servingLabel: `${fmt.editAmount.format(sg)} g`,
+          p100: round1((sp / sg) * 100),
+          c100: Math.round((sc / sg) * 100),
+          pServing: round1(sp),
+          cServing: Math.round(sc),
+          source: 'label'
+        };
+        products.remember(product);
+        dismiss();
+        openProduct(product, opts);
+      });
+      const body = el('div', { class: 'accent-sheet fix-sheet' }, [
+        el('div', {}, [
+          el('div', { class: 'fix-line', text: found ? 'No protein listed for this product' : 'Product not found' }),
+          el('div', { class: 'field-hint', text: `Barcode ${code} isn’t in Open Food Facts${found ? ' with protein' : ''} yet. Enter the label once and the app remembers it for this barcode.` })
+        ]),
+        el('div', {}, [el('div', { class: 'field-label', text: 'Name' }), name]),
+        el('div', {}, [
+          el('div', { class: 'field-label', text: 'Nutrition label (per serving)' }),
+          el('div', { class: 'inline-form label-form' }, [g, p, c]),
+          hint
+        ]),
+        save
+      ]);
+      return { navBar: navBar('Enter Label', null, el('button', { class: 'nav-button bold', text: 'Cancel', onclick: dismiss })), body: body, onShow: () => (name.value ? g : name).focus({ preventScroll: true }) };
+    });
+  }
+
+  /** A product: choose servings or grams, then log it (or use it for a recipe ingredient). */
+  function openProduct(product, opts) {
+    opts = opts || {};
+    products.remember(product);
+    const date = state.selectedDate;
+    present('cover', (dismiss) => {
+      const hasServing = !!(product.servingG || product.pServing != null);
+      let unit = hasServing ? 'serving' : 'g';
+      let amount = hasServing ? 1 : 100;
+      const amountInput = el('input', { class: 'amount-input', type: 'text', inputmode: 'decimal', autocomplete: 'off', 'aria-label': 'Amount' });
+      const unitLabel = el('div', { class: 'grams-label' });
+      const stats = el('div', { class: 'current-total' });
+      const confirm = el('button', { class: 'confirm-button' });
+      confirm.style.background = 'var(--accent)';
+      const seg = el('div', { class: 'segmented' });
+
+      function totals() {
+        if (unit === 'serving') {
+          const pS = product.pServing != null ? product.pServing : (product.p100 * product.servingG) / 100;
+          const cS = product.cServing != null ? product.cServing : (product.c100 * product.servingG) / 100;
+          return { protein: pS * amount, kcal: (cS || 0) * amount };
+        }
+        return { protein: (product.p100 * amount) / 100, kcal: ((product.c100 || 0) * amount) / 100 };
+      }
+      function show(fromInput) {
+        if (!fromInput) amountInput.value = fmt.editAmount.format(amount);
+        unitLabel.textContent = unit === 'serving' ? (amount === 1 ? 'serving' : 'servings') + (product.servingLabel ? ` (${product.servingLabel})` : '') : 'grams';
+        const t = totals();
+        stats.textContent = `${formatGrams(t.protein)}g protein · ${formatKcal(t.kcal)} kcal`;
+        if (opts.onUse) {
+          confirm.textContent = 'Use for this ingredient';
+          confirm.disabled = false;
+        } else {
+          confirm.textContent = amount > 0 && t.protein > 0 ? `Add ${formatGrams(t.protein)}g` : 'Add protein';
+          confirm.disabled = !(amount > 0) || !(t.protein > 0);
+        }
+        seg.replaceChildren(...(hasServing ? [['serving', 'Servings'], ['g', 'Grams']] : []).map(([u, label]) => el('button', {
+          class: 'segment' + (unit === u ? ' on' : ''),
+          text: label,
+          onclick: () => {
+            if (unit === u) return;
+            const sg = product.servingG || 100;
+            amount = u === 'g' ? Math.round(amount * sg) : Math.round((amount / sg) * 4) / 4 || 1;
+            unit = u;
+            show();
+          }
+        })));
+      }
+      const step = (d) => {
+        amount = unit === 'serving' ? Math.max(0.5, Math.round((amount + d * 0.5) * 2) / 2) : Math.max(5, Math.round(amount + d * 10));
+        show();
+      };
+      amountInput.addEventListener('input', () => {
+        const v = parseAmount(amountInput.value, true);
+        amount = v && v > 0 ? v : 0;
+        show(true);
+      });
+      confirm.addEventListener('click', () => {
+        if (opts.onUse) {
+          dismiss();
+          opts.onUse(product);
+          return;
+        }
+        const t = totals();
+        const protein = round1(t.protein);
+        if (!(protein > 0)) return;
+        if (!store.add(protein, product.name, date)) {
+          showAlert("Couldn't save protein", 'Unable to save this protein entry.');
+          return;
+        }
+        render();
+        dismiss();
+        if (opts.onLog) opts.onLog();
+      });
+
+      const per = [];
+      if (product.pServing != null || product.servingG) {
+        per.push(`Per serving${product.servingLabel ? ' (' + product.servingLabel + ')' : ''}: ${formatGrams(product.pServing != null ? product.pServing : (product.p100 * product.servingG) / 100)}g protein · ${formatKcal(product.cServing != null ? product.cServing : ((product.c100 || 0) * (product.servingG || 0)) / 100)} kcal`);
+      }
+      per.push(`Per 100 g: ${fmt.editAmount.format(product.p100)}g protein · ${formatKcal(product.c100 || 0)} kcal`);
+
+      const body = el('div', { class: 'add-sheet' }, [
+        el('div', { class: 'add-title-block' }, [
+          el('div', { class: 'add-title product-title', text: product.name }),
+          el('div', { class: 'add-date', text: [product.brand, opts.onUse ? '' : fmt.sheetDate.format(date)].filter(Boolean).join(' · ') })
+        ]),
+        el('div', { class: 'product-facts' }, per.map((t) => el('div', { text: t }))),
+        opts.onUse ? el('div', { class: 'footnote', text: 'The amount in your recipe is used; this sets the nutrition per gram.' }) : null,
+        opts.onUse ? null : seg,
+        opts.onUse ? null : el('div', { class: 'stepper' }, [
+          el('button', { class: 'round-button remove', 'aria-label': 'Less', html: icon('minus', 20), onclick: () => step(-1) }),
+          el('div', { class: 'amount-block' }, [amountInput, unitLabel]),
+          el('button', { class: 'round-button add', 'aria-label': 'More', html: icon('plus', 20), onclick: () => step(1) })
+        ]),
+        opts.onUse ? null : stats,
+        confirm,
+        el('div', { class: 'footnote', text: product.source === 'label' ? 'From the label you entered.' : 'Nutrition from Open Food Facts. Check it against the package if it looks off.' })
+      ]);
+      show();
+      return { navBar: navBar(opts.onUse ? 'Use Package' : 'Log Package', el('button', { class: 'nav-button', text: 'Cancel', onclick: dismiss })), body: body };
+    });
+  }
+
   // ---------- Recipe editor ----------
 
   function openRecipeEditor(existing, onSaved, preset) {
@@ -1791,7 +2186,21 @@
         }
       });
 
+      const scanButton = el('button', {
+        class: 'add-protein-button compact',
+        html: icon('barcode', 19) + '<span>Scan the package</span>',
+        onclick: () => scanPackage({
+          onUse: (pr) => {
+            const custom = { name: pr.name.slice(0, 70) + ' (package)', p: pr.p100, c: pr.c100 || 0, label: true };
+            if (pr.servingG) custom.each = pr.servingG;
+            if (item.food && item.food.cup) custom.cup = item.food.cup;
+            apply(Object.assign({ custom: custom }, keepGrams()));
+          }
+        })
+      });
+
       const body = el('div', { class: 'accent-sheet fix-sheet' }, [
+        scanButton,
         el('div', {}, [
           el('div', { class: 'fix-line', text: item.parsed.text || item.line }),
           el('div', { class: 'field-hint', text: item.status === 'manual' ? 'Using numbers you entered.' : item.food ? `Counted as ${item.food.n}${item.grams != null ? `, ${formatGrams(item.grams)} g` : ''}.` : 'Not counted yet.' })

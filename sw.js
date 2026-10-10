@@ -1,6 +1,6 @@
 // Network-first service worker: always serves the latest version when online,
 // falls back to the cached copy so the app keeps working offline.
-const CACHE = 'protein-tracker-v14';
+const CACHE = 'protein-tracker-v15';
 const SHELL = [
   './',
   'index.html',
@@ -10,7 +10,9 @@ const SHELL = [
   'manifest.webmanifest',
   'assets/icon-192.png',
   'assets/icon-512.png',
-  'assets/apple-touch-icon.png'
+  'assets/apple-touch-icon.png',
+  'vendor/zxing-reader.js',
+  'vendor/zxing_reader.wasm'
 ];
 
 self.addEventListener('install', (event) => {

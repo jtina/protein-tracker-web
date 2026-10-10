@@ -14,6 +14,7 @@ It's plain HTML, CSS and JavaScript with no build step and no dependencies.
 - Accent color picker with 9 colors
 - Data is saved in the browser's `localStorage`, under the same keys the app uses (`proteinTracker.entries`, `accentColor`)
 - **Add a single food**: on the + screen, type a food with its amount (`200g chicken breast`, `2 eggs`, `1 cup greek yogurt`) and the protein is filled in for you.
+- **Scan a package**: on the + screen, scan a barcode with the camera (or a photo, or type the number). Nutrition comes from [Open Food Facts](https://world.openfoodfacts.org); if a product isn't there, enter its label once and it's remembered for that barcode. Choose servings or grams and log it. Recently scanned packages appear as quick picks. You can also scan a package to set the nutrition of a recipe ingredient.
 - **Recipes**: paste a recipe, type ingredients one per line, or upload a recipe text file. The app reads amounts like `1 ½ cups`, `200g`, `2 large eggs` or `1 (15 oz) can`, matches each ingredient against a built-in table of about 170 common foods (typical USDA values), and shows protein and calories per serving and for the whole recipe. Add the cooked weight to see grams per serving and to log by weight. Tap any ingredient to correct it: pick another food, set its weight, search [Open Food Facts](https://world.openfoodfacts.org) for branded products, or type the numbers yourself. **Import from link**: paste a recipe website link (the ingredients, servings and any nutrition the site lists are read from the page's recipe data; on a page that lists recipes, pick one) or a TikTok link (its caption is fetched through TikTok's public embed endpoint, then hashtags and emojis are stripped). If a link doesn't work, paste the recipe or caption text instead. Log servings of a recipe from the Recipes list, or pick a recipe in the Add protein screen.
 - **Tags and search**: give recipes tags (type and press Enter or a comma; existing tags are suggested), then search recipes by name or tag, or tap tags to filter, in the Recipes list and on the + screen.
 - **Cloud sync (Supabase)**: sign in with an emailed code to save your log and recipes to your own Supabase project and keep every device in sync. See *Cloud sync setup* below.
@@ -69,3 +70,7 @@ Sync saves your log and recipes to your own Supabase project. The app still work
 To skip step 6's URL and key on every device, put them in `SUPABASE_URL` and `SUPABASE_ANON_KEY` at the top of the cloud sync section in `app.js`. The anon key is designed to be public; the row-level security policies are what keep the data private.
 
 The first time a device signs in, everything already on it is uploaded and merged with the account. Signing out keeps the data on the device.
+
+## Third-party code
+
+Barcode reading uses [zxing-wasm](https://github.com/Sec-ant/zxing-wasm) (MIT), bundled in `vendor/` and built from [zxing-cpp](https://github.com/zxing-cpp/zxing-cpp) (Apache 2.0). It loads only when you scan. See `vendor/LICENSE-zxing-wasm.txt`.
