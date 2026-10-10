@@ -64,8 +64,8 @@ Sync saves your log and recipes to your own Supabase project, and works like the
 1. In [Supabase](https://supabase.com), open your project. Using the same project as the travel log app is recommended: the app has its own `pt_` tables, and **the PIN you set there also works here**.
 2. **SQL Editor → New query**: paste `supabase/schema.sql` and **Run**. It creates the tables (with row-level security) and the PIN functions. It's safe to run again.
 3. **Authentication → URL Configuration**: add `https://jtina.github.io/protein-tracker-web/` under **Redirect URLs**, so the sign-in link comes back to this app.
-4. **Project Settings → Data API**: copy the **Project URL** and the **anon public** key.
-5. In the app: **⇅ (Backup & Sync) → Cloud sync**, paste both and tap **Connect**. Then:
+4. The app is already connected to the project `dlgrgipgqzsjzvvbheev` (set in `SUPABASE_URL` / `SUPABASE_ANON_KEY` in `app.js`). For a different project, change those two values (Project Settings → Data API).
+5. In the app: **⇅ (Backup & Sync) → Cloud sync**. Then:
    - **Already have a PIN** (from the travel app): enter it and tap **Sync**. Done.
    - **No PIN yet**: tap *Sign in with email*, tap the link in the email (it opens the app in your browser, signed in), set a PIN there, then enter that PIN in the home-screen app and on your other devices.
 

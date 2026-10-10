@@ -1035,9 +1035,9 @@
         navBar: navBar(isAdd ? 'Add Protein' : 'Remove Protein', el('button', { class: 'nav-button', text: 'Cancel', onclick: dismiss })),
         body: body,
         onShow: () => {
-          // Focus inside the tap so mobile browsers raise the keyboard, like the app's auto-focus.
-          amountInput.focus({ preventScroll: true });
-          setTimeout(() => { if (document.activeElement !== amountInput && document.activeElement !== nameInput) amountInput.focus({ preventScroll: true }); }, 250);
+          // Start in the name (focused inside the tap so the phone keyboard opens); Enter moves on to grams.
+          nameInput.focus({ preventScroll: true });
+          setTimeout(() => { if (!document.activeElement || document.activeElement === document.body) nameInput.focus({ preventScroll: true }); }, 250);
         }
       };
     });
@@ -2530,8 +2530,8 @@
   //  - signed in with an emailed link (a Supabase session), or
   //  - with your PIN: the device trades it for its own random key and syncs through
   //    server functions that only touch that account's rows.
-  const SUPABASE_URL = '';
-  const SUPABASE_ANON_KEY = '';
+  const SUPABASE_URL = 'https://dlgrgipgqzsjzvvbheev.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRsZ3JnaXBncXpzanp2dmJoZWV2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5MTIwNzQsImV4cCI6MjEwNjQ4ODA3NH0.91qGgzlG_mP_VuXwtOj0buPqseD0a9zpsC2hHrX2xDc';
   const SUPABASE_JS = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
   const SYNC_KEY = 'proteinTracker.sync';
   const DEVICE_KEY = 'proteinTracker.device';
@@ -2814,8 +2814,30 @@
       return new Error(/pt_[a-z_]+|schema cache|does not exist/i.test(msg) ? 'PIN sync isn’t set up in Supabase yet: run supabase/schema.sql in the SQL Editor.' : msg);
     };
 
+    let started = false;
+    // Not connected yet (offline when the app opened, say): try again and explain.
+    function needClient() {
+      if (client) return null;
+      started = false;
+      ensureStarted();
+      return Promise.reject(new Error('Couldn’t reach Supabase yet. Check your connection and try again in a moment.'));
+    }
+    // Load the sync library only when this device uses sync (or is coming back from the email link).
+    function startIfUsed() {
+      const fromLink = /access_token=|[?&]code=|error_description=/.test(location.hash + location.search);
+      let signedIn = false;
+      try { signedIn = !!localStorage.getItem('proteinTracker.auth'); } catch (_) { /* ignore */ }
+      if (device || signedIn || fromLink) ensureStarted();
+    }
+    function ensureStarted() {
+      if (started) return;
+      started = true;
+      start();
+    }
+
     return {
-      start: start,
+      start: ensureStarted,
+      startIfUsed: startIfUsed,
       changed: changed,
       deleted: deleted,
       markAll: () => markAll(false),
@@ -2834,6 +2856,7 @@
         meta.url = url;
         meta.key = key;
         saveMeta();
+        started = true;
         return start();
       },
       disconnect() {
@@ -2845,16 +2868,19 @@
           delete meta.url;
           delete meta.key;
           saveMeta();
+          started = false;
           setStatus('off');
         });
       },
       /** Emails a sign-in link that comes back to this page. */
       sendLink(email) {
+        const wait = needClient(); if (wait) return wait;
         return client.auth.signInWithOtp({ email: email, options: { shouldCreateUser: true, emailRedirectTo: location.origin + location.pathname } })
           .then(({ error }) => { if (error) throw new Error(error.message); });
       },
       /** Signed in: set or change the PIN. Changing it locks out devices that used the old one. */
       setPin(pin) {
+        const wait = needClient(); if (wait) return wait;
         return client.rpc('pt_set_pin', { new_pin: pin }).then(({ error }) => {
           if (error) throw rpcError(error);
           hasPin = true;
@@ -2863,6 +2889,7 @@
       },
       /** Any device: trade the PIN for this device's own key. */
       unlock(pin) {
+        const wait = needClient(); if (wait) return wait;
         return client.rpc('pt_unlock', { pin: pin }).then(({ data, error }) => {
           if (error) throw rpcError(error);
           if (!data || data.error || !data.token) throw new Error((data && data.error) || 'Wrong PIN');
@@ -2900,6 +2927,7 @@
   }
 
   function cloudSection() {
+    if (cloud.config()) cloud.start();
     const box = el('div', { class: 'cloud-card' });
     let linkSentTo = '';
     let showEmail = false;
@@ -3026,7 +3054,7 @@
   recipes.load();
   render();
 
-  cloud.start();
+  cloud.startIfUsed();
   setInterval(() => { if (document.visibilityState === 'visible') cloud.syncNow(); }, 60000);
   window.addEventListener('online', () => cloud.syncNow());
 
