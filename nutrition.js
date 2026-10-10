@@ -159,6 +159,7 @@
     { id: 'dates', n: 'Dates', k: ['dates', 'medjool dates', 'date'], p: 1.8, c: 277, cup: 147, each: 24 },
     // Oils, sauces, sweeteners, pantry
     { id: 'oil', n: 'Oil', k: ['oil', 'olive oil', 'extra virgin olive oil', 'vegetable oil', 'canola oil', 'coconut oil', 'avocado oil', 'sesame oil', 'cooking spray'], p: 0, c: 884, cup: 216 },
+    { id: 'cooking-spray', n: 'Cooking spray', k: ['cooking spray', 'spray oil', 'oil spray', 'spray cooking oil', 'cooking oil spray', 'olive oil spray', 'avocado oil spray', 'nonstick spray', 'pam'], p: 0, c: 884, each: 0.3 },
     { id: 'mayo', n: 'Mayonnaise', k: ['mayonnaise', 'mayo'], p: 1, c: 680, cup: 220 },
     { id: 'light-mayo', n: 'Light mayonnaise', k: ['light mayo', 'light mayonnaise', 'lighter mayo', 'reduced fat mayo'], p: 0.9, c: 300, cup: 230 },
     { id: 'oyster-sauce', n: 'Oyster sauce', k: ['oyster sauce', 'hoisin', 'hoisin sauce', 'stir fry sauce', 'teriyaki sauce', 'teriyaki'], p: 1.4, c: 80, cup: 288 },
@@ -186,10 +187,11 @@
     { id: 'oat-milk', n: 'Oat milk', k: ['oat milk'], p: 1, c: 48, cup: 240 },
     { id: 'chocolate-chips', n: 'Chocolate chips', k: ['chocolate chips', 'chocolate', 'dark chocolate', 'chocolate chunks'], p: 4.2, c: 480, cup: 168 },
     { id: 'cocoa', n: 'Cocoa powder', k: ['cocoa powder', 'cocoa', 'cacao powder'], p: 19.6, c: 228, cup: 86 },
-    { id: 'cornstarch', n: 'Cornstarch', k: ['cornstarch', 'corn starch', 'cornflour', 'arrowroot'], p: 0.3, c: 381, cup: 128 },
+    { id: 'cornstarch', n: 'Cornstarch', k: ['cornstarch', 'corn starch', 'cornflour'], p: 0.3, c: 381, cup: 128 },
+    { id: 'potato-starch', n: 'Potato / tapioca starch', k: ['potato starch', 'coarse potato starch', 'tapioca starch', 'tapioca flour', 'arrowroot', 'arrowroot powder', 'sweet potato starch'], p: 0.1, c: 333, cup: 192 },
     { id: 'vanilla', n: 'Vanilla extract', k: ['vanilla extract', 'vanilla'], p: 0, c: 288, cup: 208 },
     { id: 'vinegar', n: 'Vinegar', k: ['vinegar', 'apple cider vinegar', 'rice vinegar', 'rice wine vinegar', 'balsamic vinegar', 'red wine vinegar', 'white wine vinegar', 'white vinegar', 'sherry vinegar', 'malt vinegar', 'black vinegar'], p: 0, c: 18, cup: 240 },
-    { id: 'spices', n: 'Spices', k: ['spices', 'cumin', 'paprika', 'smoked paprika', 'chili powder', 'chilli powder', 'cinnamon', 'oregano', 'thyme', 'turmeric', 'curry powder', 'garlic powder', 'onion powder', 'italian seasoning', 'cayenne', 'cayenne pepper', 'red pepper flakes', 'crushed red pepper', 'nutmeg', 'coriander', 'garam masala', 'taco seasoning', 'seasoning', 'bay leaves', 'bay leaf', 'black pepper', 'pepper', 'everything bagel seasoning', 'dried oregano', 'dried basil', 'dried thyme', 'ground ginger'], p: 10, c: 300, cup: 100, each: 0.2 },
+    { id: 'spices', n: 'Spices', k: ['spices', 'cumin', 'paprika', 'smoked paprika', 'chili powder', 'chilli powder', 'cinnamon', 'oregano', 'thyme', 'turmeric', 'curry powder', 'garlic powder', 'onion powder', 'italian seasoning', 'cayenne', 'cayenne pepper', 'red pepper flakes', 'crushed red pepper', 'nutmeg', 'coriander', 'garam masala', 'taco seasoning', 'seasoning', 'bay leaves', 'bay leaf', 'black pepper', 'pepper', 'everything bagel seasoning', 'five spice', 'chinese five spice', 'five spice powder', 'white pepper', 'msg', 'chicken bouillon', 'bouillon', 'ranch seasoning', 'cajun seasoning', 'old bay', 'allspice', 'cardamom', 'cloves ground', 'sage', 'star anise', 'dried oregano', 'dried basil', 'dried thyme', 'ground ginger'], p: 10, c: 300, cup: 100, each: 0.2 },
     { id: 'salt', n: 'Salt', k: ['salt', 'kosher salt', 'sea salt', 'baking soda', 'baking powder'], p: 0, c: 0, cup: 290 },
     { id: 'water', n: 'Water', k: ['water', 'ice', 'ice cubes', 'cold water', 'warm water', 'hot water'], p: 0, c: 0, cup: 237 },
     { id: 'yeast', n: 'Yeast', k: ['yeast', 'instant yeast', 'active dry yeast'], p: 40, c: 325, cup: 140, each: 7 }
@@ -227,7 +229,7 @@
     [['splash', 'splashes', 'drizzle', 'drizzles', 'glug'], 'vol', CUP_ML / 48],
     [['can', 'cans', 'tin', 'tins'], 'can', 1],
     [['stick', 'sticks'], 'stick', 1],
-    [['clove', 'cloves', 'slice', 'slices', 'piece', 'pieces', 'pc', 'pcs', 'whole', 'scoop', 'scoops', 'fillet', 'fillets', 'filet', 'filets', 'breast', 'breasts', 'thigh', 'thighs', 'stalk', 'stalks', 'sprig', 'sprigs', 'leaf', 'leaves', 'link', 'links', 'strip', 'strips', 'patty', 'patties', 'head', 'heads', 'ear', 'ears', 'bunch', 'bunches', 'package', 'packages', 'pkg', 'block', 'blocks', 'container', 'containers', 'bag', 'bags', 'jar', 'jars', 'box', 'boxes', 'serving', 'servings'], 'each', 1]
+    [['clove', 'cloves', 'slice', 'slices', 'piece', 'pieces', 'pc', 'pcs', 'whole', 'scoop', 'scoops', 'fillet', 'fillets', 'filet', 'filets', 'second', 'seconds', 'spray', 'sprays', 'spritz', 'spritzes', 'breast', 'breasts', 'thigh', 'thighs', 'stalk', 'stalks', 'sprig', 'sprigs', 'leaf', 'leaves', 'link', 'links', 'strip', 'strips', 'patty', 'patties', 'head', 'heads', 'ear', 'ears', 'bunch', 'bunches', 'package', 'packages', 'pkg', 'block', 'blocks', 'container', 'containers', 'bag', 'bags', 'jar', 'jars', 'box', 'boxes', 'serving', 'servings'], 'each', 1]
   ];
   const UNIT_MAP = {};
   UNITS.forEach(([words, kind, factor]) => words.forEach((w) => { UNIT_MAP[w] = { kind, factor, word: w }; }));
@@ -415,7 +417,7 @@
       grams = g.grams;
       estimate = g.estimate;
       if (grams == null) {
-        const pinch = ['salt', 'spices', 'water', 'herbs'].indexOf(chosen.id) >= 0;
+        const pinch = ['salt', 'spices', 'water', 'herbs', 'cooking-spray'].indexOf(chosen.id) >= 0;
         if ((parsed.toTaste || parsed.optional || pinch) && parsed.qty == null) return Object.assign(base, { food: chosen, status: 'skip', note: 'To taste' });
         return Object.assign(base, { food: chosen, status: 'noamount', note: g.why || 'Add an amount' });
       }
@@ -576,10 +578,15 @@
       if (/^\s*\d+(?:\.\d+)?\s*(?:g|grams?)?\s*(?:of\s+)?(?:protein|carbs?|fats?|cals?|kcals?|calories)\b/i.test(l)) return false;
       if (/\d+\s*[PCF]\s*\|/.test(l) || /^\s*macros?\b/i.test(l)) return false;
       if (p.qty != null && (p.unit || matchFood(p.food))) return true;
-      return !!matchFood(l) && l.length <= 40 && !/[!?]/.test(l) && l.split(' ').length <= 6;
+      // Without an amount it's a heading ("Shrimp", "Sauce") or chatter, unless it's a to-taste item.
+      return p.toTaste && !!matchFood(l) && l.length <= 40;
     };
     const kept = ex.text.split('\n').filter((l) => l && l !== name && looksLikeIngredient(l));
-    let finalName = (ex.name || name).replace(/[!.?:\s]+$/, '');
+    let finalName = (ex.name || name)
+      .replace(/^(?:let[’']?s\s+make|let\s+us\s+make|here[’']?s|how\s+to\s+make|making|today\s+i[’']?m\s+making|i\s+made|try\s+this|recipe\s+for)\s+(?:an?\s+|my\s+|the\s+|some\s+)?/i, '')
+      .replace(/\s+(?:with\s+me|for\s+you|you\s+need\s+to\s+try)\b.*$/i, '')
+      .replace(/[!.?:\s]+$/, '');
+    finalName = finalName.charAt(0).toUpperCase() + finalName.slice(1);
     if (/^(recipe|ingredients?|serves|servings?|macros?)\b/i.test(finalName) || /\b(serves|servings?)\s*\d/i.test(finalName)) finalName = '';
     return { name: finalName, servings: ex.servings, text: kept.join('\n'), stated: stated };
   }

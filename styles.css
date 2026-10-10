@@ -651,3 +651,7 @@ svg.icon { display: block; flex-shrink: 0; }
   color: var(--accent);
   background: rgba(var(--accent-rgb), 0.18);
 }
+
+.label-form { margin-bottom: 8px; }
+.label-form .small-input { flex: 1 1 0; width: 0; }
+.inline-form .field-hint { flex: 1; margin-top: 0; }

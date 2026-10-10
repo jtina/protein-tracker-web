@@ -196,6 +196,8 @@
         if (o.custom && typeof o.custom === 'object' && Number.isFinite(+o.custom.p) && Number.isFinite(+o.custom.c)) {
           clean.custom = { name: String(o.custom.name || 'Custom food').slice(0, 80), p: +o.custom.p, c: +o.custom.c };
           if (+o.custom.each > 0) clean.custom.each = +o.custom.each;
+          if (+o.custom.cup > 0) clean.custom.cup = +o.custom.cup;
+          if (o.custom.label === true) clean.custom.label = true;
         }
         if (Number.isFinite(+o.grams) && o.grams !== null && o.grams !== '' && +o.grams >= 0) clean.grams = +o.grams;
         if (o.manual && typeof o.manual === 'object') clean.manual = { protein: Math.max(0, +o.manual.protein || 0), kcal: Math.max(0, +o.manual.kcal || 0) };
@@ -1540,6 +1542,40 @@
           .finally(() => clearTimeout(timer));
       }
 
+      // From a nutrition label: per-serving numbers → a custom food (per 100 g); the amount comes from the line.
+      const labelServing = el('input', { class: 'small-input', type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: 'Serving g', 'aria-label': 'Label serving size in grams' });
+      const labelProtein = el('input', { class: 'small-input', type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: 'Protein g', 'aria-label': 'Label protein per serving' });
+      const labelKcal = el('input', { class: 'small-input', type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: 'kcal', 'aria-label': 'Label calories per serving' });
+      const labelHint = el('div', { class: 'field-hint', text: 'For 4 oz servings, enter 113 g.' });
+      if (current.custom && current.custom.label) {
+        labelServing.value = '100';
+        labelProtein.value = fmt.editAmount.format(current.custom.p);
+        labelKcal.value = fmt.editAmount.format(current.custom.c);
+      }
+      const setLabel = el('button', {
+        class: 'pill-button',
+        text: 'Use label',
+        onclick: () => {
+          const g = parseAmount(labelServing.value, true);
+          const p = parseAmount(labelProtein.value || '0', true);
+          const c = parseAmount(labelKcal.value || '0', true);
+          if (!(g > 0) || p === null || c === null || p < 0 || c < 0) {
+            labelHint.textContent = 'Enter the serving size in grams, plus its protein and calories.';
+            return;
+          }
+          const base = (item.food && item.food.n) || item.parsed.food || 'Food';
+          const custom = {
+            name: base.replace(/\s*\(label\)$/, '') + ' (label)',
+            p: Math.round((p / g) * 1000) / 10,
+            c: Math.round((c / g) * 100),
+            label: true
+          };
+          if (item.food && item.food.each) custom.each = item.food.each;
+          if (item.food && item.food.cup) custom.cup = item.food.cup;
+          apply(Object.assign({ custom: custom }, keepGrams()));
+        }
+      });
+
       // Manual totals
       const pInput = el('input', { class: 'small-input', type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: 'Protein g', 'aria-label': 'Protein in grams' });
       const cInput = el('input', { class: 'small-input', type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: 'kcal', 'aria-label': 'Calories' });
@@ -1573,6 +1609,11 @@
           results,
           onlineButton,
           online
+        ]),
+        el('div', {}, [
+          el('div', { class: 'field-label', text: 'From the package label (per serving)' }),
+          el('div', { class: 'inline-form label-form' }, [labelServing, labelProtein, labelKcal]),
+          el('div', { class: 'inline-form' }, [labelHint, setLabel])
         ]),
         el('div', {}, [
           el('div', { class: 'field-label', text: 'Or enter it yourself (for this line)' }),
